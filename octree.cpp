@@ -54,9 +54,6 @@ public:
   indexrange<T,N>(const std::array<T,N> &aa, const std::array<T,N> &bb) : a(aa), b(bb) {};
   indexrange<T,N>(const std::array<T,N> &&aa, const std::array<T,N> &&bb) : a(aa), b(bb) {};
 
-  /* indexrange<T,N>(const T aa[N], const T bb[N]) : a(aa), b(bb) {}; */
-  /* indexrange<T,N> divide(uint8_t subcube); */
-
   std::tuple<T, T> operator()(size_t i) const { return std::make_tuple(this->a[i], this->b[i]); }
   std::tuple<T, T> operator[](size_t i) const { return std::make_tuple(this->a[i], this->b[i]); }
 
@@ -152,12 +149,15 @@ struct TensorView {
 private:
 
   indexrange<L,N> I;
-  std::shared_ptr<Eigen::Tensor<T,N,Eigen::ColMajor>> datatensor;
+  /* std::shared_ptr<Eigen::Tensor<T,N,Eigen::ColMajor>> datatensor; */
+  Eigen::Tensor<T,N,Eigen::ColMajor> datatensor;
 
 public:
 
-  TensorView(std::shared_ptr<Eigen::Tensor<T,N,Eigen::ColMajor>> datatensor) : datatensor(datatensor) {};
-  TensorView(std::shared_ptr<Eigen::Tensor<T,N,Eigen::ColMajor>> datatensor, indexrange<L, N> I) : datatensor(datatensor),  I(I) {};
+  TensorView(Eigen::Tensor<T,N,Eigen::ColMajor> datatensor) : datatensor(datatensor) {};
+  TensorView(Eigen::Tensor<T,N,Eigen::ColMajor> datatensor, indexrange<L, N> I) : datatensor(datatensor),  I(I) {};
+  /* TensorView(std::shared_ptr<Eigen::Tensor<T,N,Eigen::ColMajor>> datatensor) : datatensor(datatensor) {}; */
+  /* TensorView(std::shared_ptr<Eigen::Tensor<T,N,Eigen::ColMajor>> datatensor, indexrange<L, N> I) : datatensor(datatensor),  I(I) {}; */
 
 
   template<size_t N_ = N, std::enable_if_t<N_==2,int> = 0, typename... Ts>
@@ -166,21 +166,24 @@ public:
     I.checkrange(i,j,k);
 #endif
     auto Ktpl = std::make_tuple(K...);
-    return (*datatensor)(std::get<0>(this->I[0]) + std::get<0>(Ktpl),
-                         std::get<0>(this->I[1]) + std::get<1>(Ktpl));
+    return datatensor(std::get<0>(this->I[0]) + std::get<0>(Ktpl),
+                      std::get<0>(this->I[1]) + std::get<1>(Ktpl));
   }
 
+#if 0
   template<size_t N_ = N, std::enable_if_t<N_==3,int> = 0, typename... Ts>
   T &operator() (Ts... K) {
 #ifdef RANGE_CHECK // TODO: implement range check for indexrange
     I.checkrange(i,j,k);
 #endif
     auto Ktpl = std::make_tuple(K...);
-    return (*datatensor)(std::get<0>(this->I[0]) + std::get<0>(Ktpl),
-                         std::get<0>(this->I[1]) + std::get<1>(Ktpl),
-                         std::get<0>(this->I[2]) + std::get<2>(Ktpl));
+    return datatensor(std::get<0>(this->I[0]) + std::get<0>(Ktpl),
+                      std::get<0>(this->I[1]) + std::get<1>(Ktpl),
+                      std::get<0>(this->I[2]) + std::get<2>(Ktpl));
   }
+#endif
 
+/* #if 0 */
   template<size_t N_ = N, std::enable_if_t<N_==3,int> = 0, typename... Ts>
   T operator() (Ts... K) const {
 #ifdef RANGE_CHECK
@@ -188,19 +191,12 @@ public:
 #endif
     auto Ktpl = std::make_tuple(K...);
 
-#if 0
-#ifdef VERBOSE_DEBUG
-    std::cout << "Accessing " 
-      << std::get<0>(this->I(0)) << "+" << std::get<0>(Ktpl) << " " 
-      << std::get<0>(this->I(1)) << "+" << std::get<1>(Ktpl) << " "
-      << std::get<0>(this->I(2)) << "+" << std::get<2>(Ktpl) << std::endl;
-#endif
-#endif
 
-    return (*datatensor)(std::get<0>(this->I(0)) + std::get<0>(Ktpl),
-                         std::get<0>(this->I(1)) + std::get<1>(Ktpl),
-                         std::get<0>(this->I(2)) + std::get<2>(Ktpl));
+    return (datatensor)(std::get<0>(this->I(0)) + std::get<0>(Ktpl),
+                        std::get<0>(this->I(1)) + std::get<1>(Ktpl),
+                        std::get<0>(this->I(2)) + std::get<2>(Ktpl));
   }
+/* #endif */
 
   L size(const uint8_t dim) const {
     return std::get<1>(this->I[dim]) - std::get<0>(this->I[dim]) + 1;
@@ -222,43 +218,73 @@ void fold_tensor_to_normal_matrix(const TensorView<T,L,3>& A, uint8_t mode, M& R
 #endif
  R.resize(A.size(mode), A.size(mode));
 
- std::array<uint8_t,2> dims;
-
  assertm(mode >= 0 && mode <=2, "Invalid fold mode");
-
- switch(mode){
-   case 0:
-     dims = {1,2};
-     break;
-   case 1:
-     dims = {0,2};
-     break;
-   case 2:
-     dims = {0,1};
-     break;
- }
 
  for (L j = 0; j < A.size(mode); j++) for (L i = 0; i < A.size(mode); i++) R(i,j) = T(0);
 
- Eigen::Vector<L, 3> inds, indsT;
-
- for (size_t j = 0; j < A.size(mode); j++) {
-   indsT(mode) = j;
-   for (size_t i = 0; i<A.size(mode); i++) {
-     inds(mode) = i;
-     T acc = T(0);
-     for (size_t k1 = 0; k1 < A.size(dims[0]); k1++) for (size_t k2 = 0; k2 < A.size(dims[1]); k2++) {
-       inds(dims[0]) = k1; 
-       indsT(dims[0]) = k1; 
-       inds(dims[1]) = k2; 
-       indsT(dims[1]) = k2;
-       acc = acc + A(inds[0], inds[1], inds[2])*A(indsT[0], indsT[1], indsT[2]);
-     }
-     R(i,j) = R(i,j) + acc;
-   }
+ switch(mode){
+   case 0:
+     for (size_t p = 0; p < A.size(1); p++) {
+       for (size_t q = 0; q < A.size(2); q++) {
+         for (size_t j = 0; j < A.size(mode); j++) {
+           for (size_t i = 0; i<A.size(mode); i++) {
+         R(i,j) = R(i,j) + A(i,p,q)*A(j,p,q);
+       }}}}
+     break;
+   case 1:
+     for (size_t q = 0; q < A.size(2); q++) {
+       for (size_t j = 0; j < A.size(mode); j++) {
+         for (size_t i = 0; i<A.size(mode); i++) {
+           for (size_t p = 0; p < A.size(0); p++) {
+         R(i,j) = R(i,j) + A(p,i,q)*A(p,j,q);
+       }}}}
+     break;
+   case 2:
+     for (size_t q = 0; q < A.size(1); q++) {
+       for (size_t j = 0; j < A.size(mode); j++) {
+         for (size_t i = 0; i < A.size(mode); i++) {
+           for (size_t p = 0; p < A.size(0); p++) {
+         R(i,j) = R(i,j) + A(p,q,i)*A(p,q,j);
+       }}}}
+     break;
  }
+
 }
 
+
+template <typename T, typename L>
+void fold_tensor_vector_prod(const TensorView<T,L,3>& A, uint8_t mode, Eigen::Vector<T,Eigen::Dynamic>& x, Eigen::Vector<T, Eigen::Dynamic>& y)
+{
+ assertm(mode >= 0 && mode <=2, "Invalid fold mode");
+ L len = A.size(mode);
+
+ switch(mode) {
+   case 0:
+     for (size_t p = 0; p < A.size(1); p++) {
+       for (size_t q = 0; q < A.size(2); q++) {
+         for (size_t j = 0; j < A.size(mode); j++) {
+           for (size_t i = 0; i<A.size(mode); i++) {
+         y(i) = y(i) + A(i,p,q)*A(j,p,q)*x(j);
+           }}}}
+     break;
+   case 1:
+     for (size_t q = 0; q < A.size(2); q++) {
+       for (size_t j = 0; j < A.size(mode); j++) {
+         for (size_t i = 0; i<A.size(mode); i++) {
+           for (size_t p = 0; p < A.size(0); p++) {
+         y(i) = y(i) + A(p,i,q)*A(p,j,q)*x(j);
+       }}}}
+     break;
+   case 2:
+     for (size_t q = 0; q < A.size(1); q++) {
+       for (size_t j = 0; j < A.size(mode); j++) {
+         for (size_t i = 0; i < A.size(mode); i++) {
+           for (size_t p = 0; p < A.size(0); p++) {
+         y(i) = y(i) + A(p,q,i)*A(p,q,j)*x(j);
+       }}}}
+     break;
+ }
+}
 
 int main(int argc, char** argv) {
   using namespace std;
@@ -276,16 +302,17 @@ int main(int argc, char** argv) {
   cout << root;
 
   size_t data_dims[3] = {5,5,5};
-  /* auto datatensor = new Tensor<double, 3, ColMajor>(300,300,300); */
-  auto datatensor = std::shared_ptr<Tensor<double, 3, ColMajor>> (new Tensor<double, 3, ColMajor>(300,300,300));
+  auto datatensor = Tensor<double, 3, ColMajor>(300,300,300);
+  /* auto datatensor = std::shared_ptr<Tensor<double, 3, ColMajor>> (new Tensor<double, 3, ColMajor>(300,300,300)); */
 
   for (int i3 = 0; i3 < 300; i3++) for (int i2 = 0; i2 < 300; i2++) for (int i1 = 0; i1 < 300; i1++)
-  (*datatensor)(i1,i2,i3) = sin(M_PIf*(i1+i2+i3)/300);
+  (datatensor)(i1,i2,i3) = sin(M_PIf*(i1+i2+i3)/300);
   /* (*datatensor)(i1,i2,i3) = i1+1000*i2+1e6*i3; //sin(M_PIf*(i1+i2+i3)/300); */
 
   indexrange<uint16_t,3> K({0,0,0},{299,299,299});
   hline();
-  TensorView<double, uint16_t, 3> view = TensorView<double, uint16_t, 3>(datatensor, K.divide(0).divide(0));//.divide(1).divide(0).divide(1));
+  TensorView<double, uint16_t, 3> view = 
+    TensorView<double, uint16_t, 3>(datatensor, K);//.divide(1).divide(0).divide(1));
   hline();
 
   /* Tensor<double, 2> normal_0; */
@@ -296,29 +323,45 @@ int main(int argc, char** argv) {
   std::array<Matrix<double, Dynamic, Dynamic>, 3> normal_mat;
   auto start = chrono::high_resolution_clock::now();
 
-  cout << "folding to normal ...";
-  fold_tensor_to_normal_matrix(view,0,normal_mat[0]);
-  auto stop = chrono::high_resolution_clock::now();
-  auto duration = chrono::duration_cast<chrono::milliseconds>(stop-start);
-  cout << "duration: " << duration.count() << endl;
-  fold_tensor_to_normal_matrix(view,1,normal_mat[1]);
-  fold_tensor_to_normal_matrix(view,2,normal_mat[2]);
+#define starttime  { cout << "calculating fold prod...";
+#define endtime \
+  auto stop = chrono::high_resolution_clock::now(); \
+  auto duration = chrono::duration_cast<chrono::milliseconds>(stop-start); \
+  cout << "duration: " << duration.count() << endl; }
 
-    {
-    using namespace Spectra;
-    DenseSymMatProd<double> op(normal_mat[1]);
-    SymEigsSolver<DenseSymMatProd<double>> eigs(op, 3, 6);
+for (uint8_t mode =0; mode <3; mode++){
+  VectorXd x = VectorXd::Random(view.size(mode));
+  VectorXd y = VectorXd::Constant(view.size(mode), double(0));
 
-    eigs.init();
-    int nconv = eigs.compute(SortRule::LargestMagn);
-    Vector<double, Dynamic> evalues;
-    /* Matrix<double, Dynamic, Dynamic> */
-    if (eigs.info() == CompInfo::Successful) {
-      evalues = eigs.eigenvalues();
-    }
-    hline();
-    cout << "eigenvalues: ";
-    cout << evalues[0] << " " << evalues[1] << " " << evalues[2] << endl;
+starttime
+  /* fold_tensor_to_normal_matrix(view,0,normal_mat[0]); */
+  fold_tensor_vector_prod(view, mode, x, y);
+endtime
+}
+
+/* starttime */
+/*   fold_tensor_to_normal_matrix(view,1,normal_mat[1]); */
+/* endtime */
+
+/*   starttime */
+/*   fold_tensor_to_normal_matrix(view,2,normal_mat[2]); */
+/* endtime */
+
+if (false) {
+  using namespace Spectra;
+  DenseSymMatProd<double> op(normal_mat[1]);
+  SymEigsSolver<DenseSymMatProd<double>> eigs(op, 3, 6);
+
+  eigs.init();
+  int nconv = eigs.compute(SortRule::LargestMagn);
+  Vector<double, Dynamic> evalues;
+  /* Matrix<double, Dynamic, Dynamic> */
+  if (eigs.info() == CompInfo::Successful) {
+    evalues = eigs.eigenvalues();
+  }
+  hline();
+  cout << "eigenvalues: ";
+  cout << evalues[0] << " " << evalues[1] << " " << evalues[2] << endl;
     }
 
 
