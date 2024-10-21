@@ -170,20 +170,6 @@ public:
                       std::get<0>(this->I[1]) + std::get<1>(Ktpl));
   }
 
-#if 0
-  template<size_t N_ = N, std::enable_if_t<N_==3,int> = 0, typename... Ts>
-  T &operator() (Ts... K) {
-#ifdef RANGE_CHECK // TODO: implement range check for indexrange
-    I.checkrange(i,j,k);
-#endif
-    auto Ktpl = std::make_tuple(K...);
-    return datatensor(std::get<0>(this->I[0]) + std::get<0>(Ktpl),
-                      std::get<0>(this->I[1]) + std::get<1>(Ktpl),
-                      std::get<0>(this->I[2]) + std::get<2>(Ktpl));
-  }
-#endif
-
-/* #if 0 */
   template<size_t N_ = N, std::enable_if_t<N_==3,int> = 0, typename... Ts>
   T operator() (Ts... K) const {
 #ifdef RANGE_CHECK
@@ -251,9 +237,34 @@ void fold_tensor_to_normal_matrix(const TensorView<T,L,3>& A, uint8_t mode, M& R
 
 }
 
+template <typename T, int Uplo = Eigen::Lower, int Flags = Eigen::ColMajor, typename L, size_t N>
+class NormalFoldProd : private Spectra::DenseSymMatProd<T, Uplo, Flags>
+{
+private:
+  TensorView<T,L,N> view;
+  size_t mode=0;
+public:
+  void setMode(size_t mode) {this->mode = mode;}
+  size_t getMode() {return this->mode;}
 
+  template <typename Derived>
+    NormalFoldProd(const TensorView<T,L,N> &view) : view(view) {}; /* TODO: WIP */
+  Eigen::Index rows() const {this->view.size(this->mode);}
+  Eigen::Index cols() const {this->rows();}
+    void perform_op(const T* x_in, T* y_out) const
+    {
+    /* fold_tensor_vector_prod(this->view, Eigen::Map */
+    }
+};
+
+
+/* TODO: 
+ * - This becomes slow w/ big tensors
+ * - Make a POD version of this */
 template <typename T, typename L>
-void fold_tensor_vector_prod(const TensorView<T,L,3>& A, uint8_t mode, Eigen::Vector<T,Eigen::Dynamic>& x, Eigen::Vector<T, Eigen::Dynamic>& y)
+void fold_tensor_vector_prod(const TensorView<T,L,3>& A, uint8_t mode, 
+                             Eigen::Vector<T,Eigen::Dynamic>& x, 
+                             Eigen::Vector<T, Eigen::Dynamic>& y)
 {
  assertm(mode >= 0 && mode <=2, "Invalid fold mode");
  L len = A.size(mode);
@@ -262,23 +273,23 @@ void fold_tensor_vector_prod(const TensorView<T,L,3>& A, uint8_t mode, Eigen::Ve
    case 0:
      for (size_t p = 0; p < A.size(1); p++) {
        for (size_t q = 0; q < A.size(2); q++) {
-         for (size_t j = 0; j < A.size(mode); j++) {
-           for (size_t i = 0; i<A.size(mode); i++) {
+         for (size_t j = 0; j < A.size(0); j++) {
+           for (size_t i = 0; i<A.size(0); i++) {
          y(i) = y(i) + A(i,p,q)*A(j,p,q)*x(j);
            }}}}
      break;
    case 1:
      for (size_t q = 0; q < A.size(2); q++) {
-       for (size_t j = 0; j < A.size(mode); j++) {
-         for (size_t i = 0; i<A.size(mode); i++) {
+       for (size_t j = 0; j < A.size(1); j++) {
+         for (size_t i = 0; i<A.size(1); i++) {
            for (size_t p = 0; p < A.size(0); p++) {
          y(i) = y(i) + A(p,i,q)*A(p,j,q)*x(j);
        }}}}
      break;
    case 2:
      for (size_t q = 0; q < A.size(1); q++) {
-       for (size_t j = 0; j < A.size(mode); j++) {
-         for (size_t i = 0; i < A.size(mode); i++) {
+       for (size_t j = 0; j < A.size(2); j++) {
+         for (size_t i = 0; i < A.size(2); i++) {
            for (size_t p = 0; p < A.size(0); p++) {
          y(i) = y(i) + A(p,q,i)*A(p,q,j)*x(j);
        }}}}
@@ -290,6 +301,7 @@ int main(int argc, char** argv) {
   using namespace std;
   using namespace Eigen;
 
+  const size_t tensorsize = 150;
   indexrange<uint16_t,3> R({0,0,0},{49,49,49});
   auto D = R.divide(uint16_t(1+(1<<2)));
 
@@ -302,23 +314,19 @@ int main(int argc, char** argv) {
   cout << root;
 
   size_t data_dims[3] = {5,5,5};
-  auto datatensor = Tensor<double, 3, ColMajor>(300,300,300);
-  /* auto datatensor = std::shared_ptr<Tensor<double, 3, ColMajor>> (new Tensor<double, 3, ColMajor>(300,300,300)); */
+  auto datatensor = Tensor<double, 3, ColMajor>(tensorsize,tensorsize,tensorsize);
+  /* auto datatensor = std::shared_ptr<Tensor<double, 3, ColMajor>> (new Tensor<double, 3, ColMajor>(tensorsize,tensorsize,tensorsize)); */
 
-  for (int i3 = 0; i3 < 300; i3++) for (int i2 = 0; i2 < 300; i2++) for (int i1 = 0; i1 < 300; i1++)
-  (datatensor)(i1,i2,i3) = sin(M_PIf*(i1+i2+i3)/300);
-  /* (*datatensor)(i1,i2,i3) = i1+1000*i2+1e6*i3; //sin(M_PIf*(i1+i2+i3)/300); */
+  for (int i3 = 0; i3 < tensorsize; i3++) for (int i2 = 0; i2 < tensorsize; i2++) for (int i1 = 0; i1 < tensorsize; i1++)
+  (datatensor)(i1,i2,i3) = sin(M_PIf*(i1+i2+i3)/tensorsize);
+  /* (*datatensor)(i1,i2,i3) = i1+1000*i2+1e6*i3; //sin(M_PIf*(i1+i2+i3)/tensorsize); */
 
-  indexrange<uint16_t,3> K({0,0,0},{299,299,299});
+  indexrange<uint16_t,3> K({0,0,0},{tensorsize-1,tensorsize-1,tensorsize-1});
   hline();
   TensorView<double, uint16_t, 3> view = 
-    TensorView<double, uint16_t, 3>(datatensor, K);//.divide(1).divide(0).divide(1));
+    TensorView<double, uint16_t, 3>(datatensor, K);
   hline();
 
-  /* Tensor<double, 2> normal_0; */
-  /* Tensor<double, 2> normal_1; */
-  /* Tensor<double, 2> normal_2; */
-  /* std::array<Tensor<double, 2>, 3> normal_mat; */
 
   std::array<Matrix<double, Dynamic, Dynamic>, 3> normal_mat;
   auto start = chrono::high_resolution_clock::now();
@@ -329,6 +337,7 @@ int main(int argc, char** argv) {
   auto duration = chrono::duration_cast<chrono::milliseconds>(stop-start); \
   cout << "duration: " << duration.count() << endl; }
 
+  if (false)
 for (uint8_t mode =0; mode <3; mode++){
   VectorXd x = VectorXd::Random(view.size(mode));
   VectorXd y = VectorXd::Constant(view.size(mode), double(0));
@@ -347,7 +356,10 @@ endtime
 /*   fold_tensor_to_normal_matrix(view,2,normal_mat[2]); */
 /* endtime */
 
-if (false) {
+hline();
+cout << "Doing Some eigen value computations\n";
+starttime
+if (true) {
   using namespace Spectra;
   DenseSymMatProd<double> op(normal_mat[1]);
   SymEigsSolver<DenseSymMatProd<double>> eigs(op, 3, 6);
@@ -363,6 +375,7 @@ if (false) {
   cout << "eigenvalues: ";
   cout << evalues[0] << " " << evalues[1] << " " << evalues[2] << endl;
     }
+endtime
 
 
 
@@ -388,7 +401,7 @@ if (false) {
   itrange<int,int,int> newr(make_tuple(1,2,3),make_tuple(4,5,6));
   cout << get<1>(newr.a);
 
-  cout << "press enter to exit";
-  getchar();
+  /* cout << "press enter to exit"; */
+  /* getchar(); */
 }
 

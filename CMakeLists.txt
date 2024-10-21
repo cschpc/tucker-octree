@@ -14,6 +14,7 @@ find_package (Eigen3 3.3 REQUIRED NO_MODULE)
 ADD_EXECUTABLE(octree octree.cpp)
 target_link_libraries (octree Eigen3::Eigen)
 
+SET(CMAKE_BUILD_TYPE RelWIthDebInfo CACHE STRING "")
 
 option(USE_HIP_GPU "Use normal HIP" OFF)
 
