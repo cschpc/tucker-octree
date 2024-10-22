@@ -11,13 +11,14 @@
 #include <cmath>
 #include <Spectra/SymEigsSolver.h>
 #include <chrono>
+#include <argparse.hpp>
 
 #define assertm(expression, message) assert(((void)message, expression))
 
 #define starttime  { auto start = chrono::high_resolution_clock::now(); 
 #define endtime \
   auto stop = chrono::high_resolution_clock::now(); \
-  auto duration = chrono::duration_cast<chrono::milliseconds>(stop-start); \
+  auto duration = chrono::duration_cast<chrono::microseconds>(stop-start); \
   cout << duration.count(); }
 
 
@@ -53,6 +54,7 @@ class indexrange {
 private: 
   std::array<T,N> a;
   std::array<T,N> b;
+  std::array<size_t, N> Jk;
 public:
   
   indexrange<T,N>() {};
@@ -61,6 +63,16 @@ public:
 
   std::tuple<T, T> operator()(size_t i) const { return std::make_tuple(this->a[i], this->b[i]); }
   std::tuple<T, T> operator[](size_t i) const { return std::make_tuple(this->a[i], this->b[i]); }
+
+  template<typename M1, typename ...M>
+  size_t get_J(uint8_t p, M1 head, M ...rest){
+    return this->Jk[p]*head - this->Jk[p] + this->get_J(p+1, rest...);
+  }
+
+  template<typename M0>
+  size_t get_J(uint8_t p, M0 rest){
+    return this->Jk[p]*rest - this->Jk[p];
+  }
 
   template <typename S> Eigen::Tensor<S,N> getslice(Eigen::Tensor<S,N> &A){
     using namespace Eigen;
@@ -78,21 +90,21 @@ public:
   template<typename T_, size_t N_>
   friend std::ostream& operator <<(std::ostream &o, const indexrange<T_, N_> R);
 
-    indexrange<T, N> divide(uint8_t subcube) {
-      indexrange<T, N> D(this->a, this->b);
-      T two(2);
-      T one(1); // TODO: calculate correct remainder, if T is a floatingh point type, one should be 0!
-      for(uint8_t dim=0; dim < 3; dim++) {
-        if (subcube & (1 << dim)) {
-          D.a[dim] = this->a[dim] + (this->b[dim]-this->a[dim])/two + one;
-          D.b[dim] = this->b[dim];
-        } else {
-          D.a[dim] = this->a[dim];
-          D.b[dim] = this->a[dim] + (this->b[dim]-this->a[dim])/two;
-        }
+  indexrange<T, N> divide(uint8_t subcube) {
+    indexrange<T, N> D(this->a, this->b);
+    T two(2);
+    T one(1); // TODO: calculate correct remainder, if T is a floatingh point type, one should be 0!
+    for(uint8_t dim=0; dim < 3; dim++) {
+      if (subcube & (1 << dim)) {
+        D.a[dim] = this->a[dim] + (this->b[dim]-this->a[dim])/two + one;
+        D.b[dim] = this->b[dim];
+      } else {
+        D.a[dim] = this->a[dim];
+        D.b[dim] = this->a[dim] + (this->b[dim]-this->a[dim])/two;
       }
-      return D;
     }
+    return D;
+  }
 };
 
 
@@ -144,7 +156,7 @@ std::ostream& operator <<(std::ostream &o, const leaf<indexrange<T,3>>& root) {
 }
 
 void hline() {
-  std::cerr << "#############################################" << std::endl;
+  /* std::cerr << "#############################################" << std::endl; */
 }
 
 
@@ -165,6 +177,17 @@ public:
   /* TensorView(std::shared_ptr<Eigen::Tensor<T,N,Eigen::ColMajor>> datatensor, indexrange<L, N> I) : datatensor(datatensor),  I(I) {}; */
 
 
+  template<typename M1, typename ...M>
+  size_t get_J(uint8_t p, M1 head, M ...rest){
+    return this->I.get_J(p, head, rest...);
+  }
+
+  template<typename M0>
+  size_t get_J(uint8_t p, M0 rest) {
+    return this->I.get_J(p, rest);
+  }
+
+
   template<size_t N_ = N, std::enable_if_t<N_==2,int> = 0, typename... Ts>
   T &operator() (Ts... K) {
 #ifdef RANGE_CHECK // TODO: implement range check for indexrange
@@ -181,7 +204,6 @@ public:
     I.checkrange(i,j,k);
 #endif
     auto Ktpl = std::make_tuple(K...);
-
 
     return (datatensor)(std::get<0>(this->I(0)) + std::get<0>(Ktpl),
                         std::get<0>(this->I(1)) + std::get<1>(Ktpl),
@@ -333,9 +355,7 @@ public:
   void setMode(uint8_t mode) {this->mode = mode;}
   uint8_t getMode() const {return this->mode;}
 
-  NormalFoldProd(TensorView<T,L,N> view) : view(view) {
-    
-  }; /* TODO: WIP */
+  NormalFoldProd(TensorView<T,L,N> view) : view(view) { };
 
   Eigen::Index rows() const {return this->view.size(this->mode);}
   Eigen::Index cols() const {return this->rows();}
@@ -349,118 +369,89 @@ public:
 };
 
 
-
-/* TODO:
- * - [ ] timings w/ different tensorsize */
-int main(int argc, char** argv) {
+void test_tensorsizes(std::vector<uint16_t> tensorsizes) {
   using namespace std;
   using namespace Eigen;
-   
-  
-
-  const uint16_t tensorsize = std::stoi(argv[1]);
-  const uint16_t tensorsize_m = uint16_t(tensorsize-1);
-
-  
-  /* indexrange<uint16_t,3> R({0,0,0},{49,49,49}); */
-  /* auto D = R.divide(uint16_t(1+(1<<2))); */
-
-  /* cout << D << endl; */
-  /* leaf<indexrange<uint16_t,3>> root({R, NULL}); */
-  /* root = divide(root); */
-
-  /* root.children[1] = divide(root.children[1]); */
-  /* root.children[1].children[2] = divide(root.children[1].children[2]); */
-  /* cout << root; */
-
-  /* size_t data_dims[3] = {5,5,5}; */
+  const uint16_t tensorsize = tensorsizes[0];
 
   auto datatensor = Tensor<double, 3, ColMajor>(tensorsize,tensorsize,tensorsize);
 
   for (int i3 = 0; i3 < tensorsize; i3++) for (int i2 = 0; i2 < tensorsize; i2++) for (int i1 = 0; i1 < tensorsize; i1++)
-  (datatensor)(i1,i2,i3) = sin(M_PIf*(i1+i2+i3)/tensorsize);
+  datatensor(i1,i2,i3) = sin(M_PIf*(i1+i2+i3)/tensorsize);
 
-  indexrange<uint16_t,3> K({0,0,0},{tensorsize_m,tensorsize_m,tensorsize_m});
-  hline();
-  /* TensorView<double, uint16_t, 3> */ 
+  for (uint16_t tensorsize_m = tensorsizes[1]; tensorsize_m < tensorsizes[2]; tensorsize_m+= 2){
+    indexrange<uint16_t,3> K({0,0,0},{tensorsize_m,tensorsize_m,tensorsize_m});
     auto view = TensorView<double, uint16_t, 3>(datatensor, K);
-  hline();
 
 
-  std::array<Matrix<double, Dynamic, Dynamic>, 3> normal_mat;
+    cout << tensorsize << ", " << tensorsize_m << ",";
+    for (size_t mode=0;mode<3;mode++){
+      starttime
+        using namespace Spectra;
+      /* DenseSymMatProd<double> op_folded(normal_mat[0]); */
+      NormalFoldProd<double, uint16_t, 3> op(view);
+      op.setMode(mode);
+      SymEigsSolver<NormalFoldProd<double, uint16_t, 3>> eigs(op, 2, 3);
 
+      eigs.init();
+      int nconv = eigs.compute(SortRule::LargestMagn);
+      Vector<double, Dynamic> evalues;
 
-  if (false)
-for (uint8_t mode =0; mode <3; mode++){
-  VectorXd x = VectorXd::Random(view.size(mode));
-  VectorXd y = VectorXd::Constant(view.size(mode), double(0));
-
-  starttime
-    fold_tensor_vector_prod(view, mode, x, y);
-  endtime
-}
-
-/* fold_tensor_to_normal_matrix(view,0,normal_mat[0]); */
-
-/* starttime */
-/*   fold_tensor_to_normal_matrix(view,1,normal_mat[1]); */
-/* endtime */
-
-/*   starttime */
-/*   fold_tensor_to_normal_matrix(view,2,normal_mat[2]); */
-/* endtime */
-
-hline();
-cerr << "# Doing Some eigen value computations\n";
-
-for (size_t mode=0;mode<3;mode++){
-starttime
-if (true) {
-  using namespace Spectra;
-  /* DenseSymMatProd<double> op_folded(normal_mat[0]); */
-  NormalFoldProd<double, uint16_t, 3> op(view);
-  op.setMode(0);
-  SymEigsSolver<NormalFoldProd<double, uint16_t, 3>> eigs(op, 3, 5);
-  /* SymEigsSolver<DenseSymMatProd<double>> eigs_folded(op_folded, 5, 22); */
-
-  eigs.init();
-  /* eigs_folded.init(); */
-  int nconv = eigs.compute(SortRule::LargestMagn);
-  /* int nconv_folded = eigs_folded.compute(SortRule::LargestMagn); */
-  Vector<double, Dynamic> evalues, evalues_folded;
-
-  if (eigs.info() == CompInfo::Successful) evalues = eigs.eigenvalues();
-  /* if (eigs_folded.info() == CompInfo::Successful) evalues_folded = eigs_folded.eigenvalues(); */
-  hline();
-  cerr << "# eigenvalues: ";
-  for (int i=0;i<5;i++) cerr << evalues[i] << " ";
-  cerr << endl;
-  /* cout << "eigenvalues (folded): "; */
-  /* for (int i=0;i<5;i++) cout << evalues_folded[i] << " "; */
-  /* cout << endl; */
-  }
-endtime
-  cout << "," ;
-
-}
-cout <<  tensorsize << endl;
-
-
-
-  /* hline(); */
-  /* cout << normal_mat[0] << endl; */
-  /* hline(); */
-
-  hline();
-  TensorView<double, uint16_t, 3> view2 = TensorView<double, uint16_t, 3>(datatensor, K.divide(0).divide(0).divide(0).divide(7));//.divide(1).divide(0).divide(1));
-  for (int i2=0; i2 < view2.size(1); i2++) {
-  for (int i1=0; i1 < view2.size(0); i1++) {
-    cerr << view2(i2,i1,0) << " ";
+      if (eigs.info() == CompInfo::Successful) evalues = eigs.eigenvalues();
+      endtime
+        if (mode < 2) cout << ",";
     }
-  cerr << endl;
+    cout << endl;
   }
-  cerr << endl;
-  hline();
+}
+
+void test_indexing() {
+  using namespace Eigen;
+  using namespace std;
+  auto datatensor = Tensor<double, 3, ColMajor>(10,20,30);
+  indexrange<uint16_t, 3> K({0,0,0},{9,19,29});
+  auto view = TensorView<double, uint16_t, 3>(datatensor, K);
+  cout << view.get_J(0, 1,2,3);
+}
+
+/* TODO:
+ * - [ ] timings w/ different tensorsize */
+
+int main(int argc, const char** argv) {
+  using namespace std;
+  using namespace Eigen;
+
+  struct Myargs : public argparse::Args{
+    vector<uint16_t> &tensorsizes = kwarg("b,benchmark", "Size of big tensor, size of current view, max size of view").set_default("0,0,0");
+    bool &indextest = flag("i,indextest", "test indexing");
+    bool &help = flag("h,help", "help");
+  };
+
+
+  /* parser.ignoreFirstArgument(true); */
+  auto args = argparse::parse<Myargs>(argc, argv);
+  if (args.help) args.print();
+
+  auto tensorsizes = args.tensorsizes;
+
+  if (tensorsizes[0] > 0) test_tensorsizes(tensorsizes);
+
+  if (args.indextest) test_indexing();
+
+
+
+/* if (false){ */
+/*   hline(); */
+/*   TensorView<double, uint16_t, 3> view2 = TensorView<double, uint16_t, 3>(datatensor, K.divide(0).divide(0).divide(0).divide(7));//.divide(1).divide(0).divide(1)); */
+/*   for (int i2=0; i2 < view2.size(1); i2++) { */
+/*     for (int i1=0; i1 < view2.size(0); i1++) { */
+/*       cerr << view2(i2,i1,0) << " "; */
+/*     } */
+/*     cerr << endl; */
+/*   } */
+/*   cerr << endl; */
+/*   hline(); */
+/* } */
 
 
   /* char ok; */

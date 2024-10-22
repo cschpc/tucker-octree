@@ -11,8 +11,12 @@ option(CMAKE_EXPORT_COMPILE_COMMANDS "export compile_commands.json" ON)
 SET(TUCKER_MPI_SERIAL_ROOT "$ENV{HOME}/opt/TuckerMPI/serial" CACHE PATH "")
 
 find_package (Eigen3 3.3 REQUIRED NO_MODULE)
+
 ADD_EXECUTABLE(octree octree.cpp)
+
 target_link_libraries (octree Eigen3::Eigen)
+
+set_property(TARGET octree PROPERTY CXX_STANDARD 17)
 
 SET(CMAKE_BUILD_TYPE RelWIthDebInfo CACHE STRING "")
 
