@@ -39,9 +39,14 @@ else()
 endif()
 
 option(VERBOSE_DEBUG "Output verbose debugging messages" OFF)
+option(BRIEF_DEBUG "Output brief debugging messages" OFF)
 
 if(VERBOSE_DEBUG)
   add_compile_definitions(VERBOSE_DEBUG)
+endif()
+
+if(BRIEF_DEBUG)
+  add_compile_definitions(BRIEF_DEBUG)
 endif()
 
 include_directories(${TUCKER_MPI_SERIAL_ROOT}/include ${CMAKE_SOURCE_DIR}/contrib/include)
