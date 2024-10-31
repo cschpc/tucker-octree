@@ -2,7 +2,7 @@ CMAKE_MINIMUM_REQUIRED(VERSION 3.10)
 
 PROJECT(VDF_OCTREE CXX C)
 
-set(Eigen3_DIR "/home/jkataja/opt/eigen/vlasiator-3.22.1" CACHE PATH "")
+set(Eigen3_DIR "/home/jkataja/opt/eigen/vlasiator-3.22.1/share/eigen3/cmake" CACHE PATH "")
 set(hip_cpu_rt_DIR "/home/jkataja/opt/hipcpu/share/hip_cpu_rt/cmake" CACHE PATH "")
 # set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE CACHE BOOL "")
 option(CMAKE_EXPORT_COMPILE_COMMANDS "export compile_commands.json" ON)
