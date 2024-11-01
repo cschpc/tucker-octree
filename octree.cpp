@@ -50,11 +50,13 @@ void here() {
 }
 
 
-template <typename T, size_t N> class indexrange 
+template <typename T, size_t N>
+class indexrange 
 {
 private: 
-  std::array<T,N> a;
-  std::array<T,N> b;
+  using arr = std::array<T,N>;
+  arr a;
+  arr b;
   std::array<std::array<size_t, N>,N> Jk;
 
   void setJk() {
@@ -70,6 +72,8 @@ private:
       this->Jk[mode][mode] = 0;
     }
 
+
+
 #ifdef VERBOSE_DEBUG
     for (size_t mode = 0; mode < N; mode++) {
       for (int k = 0; k < N; k++) {
@@ -79,13 +83,14 @@ private:
     }
 #endif
 
-  };
+  }
 
 public:
 
-  indexrange<T,N>() {};
-  indexrange<T,N>(std::array<T,N> &aa, std::array<T,N> &bb) : a(aa), b(bb) {this->setJk();};
-  indexrange<T,N>(std::array<T,N> &&aa, std::array<T,N> &&bb) : a(aa), b(bb) {this->setJk();};
+  indexrange<T,N>() {}
+  indexrange<T,N>(arr &aa, arr &bb) : a(aa), b(bb) {this->setJk();}
+  /* indexrange<T,N>(std::array<T,N> &aa, std::array<T,N> &bb) : a(aa), b(bb) {this->setJk();} */
+  indexrange<T,N>(arr &&aa, arr &&bb) : a(aa), b(bb) {this->setJk();}
 
   std::tuple<T, T> operator()(size_t i) const { return std::make_tuple(this->a[i], this->b[i]); }
   std::tuple<T, T> operator[](size_t i) const { return std::make_tuple(this->a[i], this->b[i]); }
@@ -226,6 +231,7 @@ public:
       if (this->residual > 0) return this->residual;
 
       auto MAX = [](T a,T b) { 
+        /* return a*a + b; */
         return a > b ? a : b; 
       };
       T acc = T(0);
@@ -469,7 +475,15 @@ void fold_tensor_vector_prod(const TensorView<T,L,3>& A, uint8_t mode,
 
 template <typename T, typename L>
 void fold_tensor_vector_prod(const TensorView<T,L,3>& A, const uint8_t mode,
-                             const T* x_in, T* y_out, T* work)
+                             const T* x_in, T* y_out, T* work) {
+
+  fold_tensor_vector_prod(A, mode, x_in, y_out, work, T(1));
+
+}
+
+template <typename T, typename L>
+void fold_tensor_vector_prod(const TensorView<T,L,3>& A, const uint8_t mode,
+                             const T* x_in, T* y_out, T* work, T scale)
 {
   using namespace std;
   assertm(mode >= 0 && mode <=2, "Invalid fold mode");
@@ -488,7 +502,7 @@ void fold_tensor_vector_prod(const TensorView<T,L,3>& A, const uint8_t mode,
             for (size_t j = 0; j < len[1]; j++) {
             J = A.get_J((uint8_t) mode, i+1,j+1,k+1)-1;
             I = i;
-            work[J] = work[J] + A(i,j,k)*x_in[I];
+            work[J] = work[J] + A(i,j,k)*x_in[I]*scale;
           }}}
       break;
 
@@ -498,7 +512,7 @@ void fold_tensor_vector_prod(const TensorView<T,L,3>& A, const uint8_t mode,
           for (size_t i = 0; i < len[0]; i++) {
             J = A.get_J((uint8_t) mode, i+1,j+1,k+1)-1;
             I = j;
-            work[J] = work[J] + A(i,j,k)*x_in[I];
+            work[J] = work[J] + A(i,j,k)*x_in[I]*scale;
           }}}
       break;
 
@@ -508,7 +522,7 @@ void fold_tensor_vector_prod(const TensorView<T,L,3>& A, const uint8_t mode,
           for (size_t i = 0; i < len[0]; i++) {
             J = A.get_J((uint8_t) mode, i+1,j+1,k+1)-1;
             I = k;
-            work[J] = work[J] + A(i,j,k)*x_in[I];
+            work[J] = work[J] + A(i,j,k)*x_in[I]*scale;
           }}}
       break;
   }
@@ -520,7 +534,7 @@ void fold_tensor_vector_prod(const TensorView<T,L,3>& A, const uint8_t mode,
             for (size_t i = 0; i < len[0]; i++) {
             J = A.get_J(mode, i+1,j+1,k+1)-1;
             I = i; 
-            y_out[I] = y_out[I] + A(i,j,k)*work[J];
+            y_out[I] = y_out[I] + A(i,j,k)*work[J]*scale;
           }}}
       break;
 
@@ -530,7 +544,7 @@ void fold_tensor_vector_prod(const TensorView<T,L,3>& A, const uint8_t mode,
         for (size_t i = 0; i < len[0]; i++) {
             J = A.get_J(mode, i+1,j+1,k+1)-1;
             I = j; 
-            y_out[I] = y_out[I] + A(i,j,k)*work[J];
+            y_out[I] = y_out[I] + A(i,j,k)*work[J]*scale;
           }}}
       break;
 
@@ -540,7 +554,7 @@ void fold_tensor_vector_prod(const TensorView<T,L,3>& A, const uint8_t mode,
           for (size_t i = 0; i < len[0]; i++) {
             J = A.get_J(mode, i+1,j+1,k+1)-1;
             I = k; 
-            y_out[I] = y_out[I] + A(i,j,k)*work[J];
+            y_out[I] = y_out[I] + A(i,j,k)*work[J]*scale;
           }}}
       break;
 
@@ -575,6 +589,7 @@ private:
   TensorView<T,L,N> view;
   int mode=-1;
   T* work = NULL;
+  T scale;
 public:
   using Scalar = T;
 
@@ -590,7 +605,7 @@ public:
   }
   uint8_t getMode() const {return this->mode;}
 
-  NormalFoldProd(TensorView<T,L,N> view) : view(view) { };
+  NormalFoldProd(TensorView<T,L,N> view, T scale) : view(view), scale(scale) { };
 
   Eigen::Index rows() const {return this->view.size(this->mode);}
   Eigen::Index cols() const {return this->rows();}
@@ -600,7 +615,7 @@ public:
     for (size_t i = 0; i<this->rows(); i++) y_out[i] = T(0);
     /* fold_tensor_vector_prod(this->view, this->getMode(), x_in, y_out); */ 
     /* std::cout << "at perform op mode: " << int(this->getMode()) << std::endl; */
-    fold_tensor_vector_prod(this->view, this->getMode(), x_in, y_out, this->work); 
+    fold_tensor_vector_prod(this->view, this->getMode(), x_in, y_out, this->work, this->scale); 
     here();
     }
   ~NormalFoldProd(){ if (work != NULL) delete[] work;};
@@ -621,7 +636,9 @@ void test_normalprods(std::vector<uint16_t> sizes) {
 
   /* std::cout << siz[0] << " " << siz[1] << " " << siz[2] << endl; */
   auto view = TensorView<double, uint16_t,3>(datatensor, K);
-  NormalFoldProd<double,uint16_t, 3> op(view);
+  auto res = view.get_residual();
+
+  NormalFoldProd<double,uint16_t, 3> op(view, 1/res);
 
   const int modes[3] = {1,0,2};
   for (int n = 0; n < 3; n++) {
@@ -646,7 +663,10 @@ struct Tucker {
 private:
   TensorView<T,L,N>& view;
   T residual = T(0);
+  T scale;
 public:
+
+  T getScale() const { return this->scale; }
 
   Eigen::Tensor<T, N> core;
   std::array<Eigen::Matrix<T, Eigen::Dynamic,core_rank>, N> factors;
@@ -661,14 +681,20 @@ public:
       this->factors[m].resize(this->view.size(m),core_rank);
     }
 
+    /* TODO: too smart scaling, die gracefully if res < epsilon */
+    auto res = view.get_residual();
+    this->scale = 1/res;
+
+    NormalFoldProd<T,L,N> op(this->view, this->scale);
 
     for (size_t mode=0; mode<3; mode++) {
-      NormalFoldProd<T,L,N> op(this->view);
       op.setMode(mode);
       SymEigsSolver<NormalFoldProd<T, L, N>> eigs(op, core_rank, MIN(core_rank+1, view.size(mode)) );
       eigs.init();
+
       int nconv = eigs.compute(SortRule::LargestMagn);
       auto eigenvalues = eigs.eigenvalues();
+
 #if TUCKER_DEBUG
       std::cout << "Mode " << mode << " converged " << nconv << " eigenvalues:\n" << eigenvalues << std::endl << std::endl;
 #endif
@@ -677,18 +703,6 @@ public:
       this->factors[mode].resize(view.size(mode), core_rank);
       this->factors[mode] = eigenvectors;
 
-#if VERBOSE_DEBUG
-      std::cout << "eigenvectors:\n";
-
-      for (int i = 0; i<view.size(mode); i++) {
-        for (int j = 0; j<core_rank; j++) {
-          std::cout << eigenvectors(i,j) << " ";
-          this->factors[mode](i,j) = eigenvectors(i,j);
-        }
-        std::cout << std::endl;
-      }
-      std::cout << std::endl;
-#endif
 
       auto normi = eigenvectors.norm();
 #if TUCKER_DEBUG
@@ -732,9 +746,14 @@ public:
       }
   }
 
-  /* Warning! Mutates the view contents! */
   template<size_t N_ = N, std::enable_if_t<N_==3,int> = 0>
   void fill_residual() {
+    this->fill_residual(VDF_REAL_DTYPE(1), VDF_REAL_DTYPE(-1));
+  }
+  /* Warning! Mutates the view contents! */
+
+  template<size_t N_ = N, std::enable_if_t<N_==3,int> = 0>
+  void fill_residual(const VDF_REAL_DTYPE mult_orig, const VDF_REAL_DTYPE mult_corr) {
 
     for(size_t i1 = 0; i1 < view.size(0); i1++)
     for(size_t i2 = 0; i2 < view.size(1); i2++)
@@ -749,7 +768,7 @@ public:
           this->factors[1](i2,j2)*
           this->factors[2](i3,j3);
       }
-    this->view(i1,i2,i3) = this->view(i1,i2,i3) - acc;
+    this->view(i1,i2,i3) = mult_orig*this->view(i1,i2,i3) + mult_corr*acc;
     }
     this->residual = this->view.get_residual();
   }
@@ -777,7 +796,7 @@ void test_tensorsizes(std::vector<uint16_t> tensorsizes) {
       starttime
         using namespace Spectra;
 
-      NormalFoldProd<double, uint16_t, 3> op(view);
+      NormalFoldProd<double, uint16_t, 3> op(view, double(1));
       op.setMode(mode);
       SymEigsSolver<NormalFoldProd<double, uint16_t, 3>> eigs(op, 2, 6);
 
@@ -853,23 +872,22 @@ void test_tucker(int big_N) {
 
 }
 
-void test_tree() {
+void test_tree(size_t maxiter) {
   using namespace Eigen;
   using namespace std;
   /* const int big_N = 255; */
   typedef size_t UI;
-  UI big_N = 30;
+  UI big_N = 100;
   auto datatensor = Tensor<double, 3, ColMajor>(big_N,big_N,big_N);
   indexrange<UI, 3> K({0,0,0},{UI(big_N-1),UI(big_N-1),UI(big_N-1)});
 
   auto tree = leaf<indexrange<UI,3>>();
   tree.data = K;
 
-  divide(tree);
-
+  /* divide(tree); */
 
   auto f = [&](int I) {return M_PIf64*(I+1)/big_N;};
-  auto F = [&](int I1, int I2, int I3) {return exp((I1+I2+I3)/big_N) + sin(M_PIf64*(I1+I2+I3+1)/big_N);};
+  auto F = [&](int I1, int I2, int I3) {return exp(pow((I1+I2+I3)/(3.0*big_N),2))*sin(M_PIf64*(I1+I2+I3+1)/big_N);};
 
   auto view = TensorView<double,UI,3>(datatensor, K);
   for (int i1 = 0; i1<view.size(0); i1++) {
@@ -878,31 +896,31 @@ void test_tree() {
     view(i1,i2,i3) = F(i1,i2,i3);
   }}}
 
-  cout << "sqnorm of view " << view.sqnorm() << endl;
-  auto tuck = Tucker<double, UI, 2, 3>(view);
-  tuck.fill_residual();
+  for(int iter=0; iter<maxiter; iter++) {
+    cout << "iter: " << iter << " sqnorm of view " << view.sqnorm() << "\t\t|\t";
 
-  cout << tree.children[0].data << endl;
+    double residual = -1.0;
 
-  int biggest_residual_leaf = -1;
-  double residual = -1.0;
-  for (int i=0; i<8; i++){
-    auto c_view = TensorView<double, UI, 3>(datatensor, tree.children[i].data);
-    double c_residual = c_view.get_residual();
-    cout << i << ": leaf inds: " << tree.children[i].data << " residual: " << c_residual << endl;
-    if (c_residual > residual)
-      {
-      residual = c_residual;
-      biggest_residual_leaf = i;
+    // find worst leaf
+    leaf<indexrange<UI,3>>* worst_leaf;
+    for (auto it = tree.begin(); it != tree.end(); ++it) {
+      auto& leaf = (*it);
+      auto c_view = TensorView<double, UI, 3>(datatensor, leaf.data);
+      double c_residual = c_view.get_residual();
+      if (c_residual > residual) {
+        residual = c_residual;
+        worst_leaf = &leaf;
       }
-  };
+    };
 
-  auto c_view = TensorView<double, UI, 3>(datatensor, tree.children[biggest_residual_leaf].data);
-  auto c_tuck = Tucker<double, UI, 2, 3>(c_view); 
+    // improve worst leaf
+    cout << "worst leaf: " << worst_leaf->level << " : "<<  worst_leaf->data << " residual: " << residual << endl;
+    divide(*worst_leaf);
+    auto c_view = TensorView<double, UI, 3>(datatensor, worst_leaf->data);
+    auto tuck = Tucker<double, UI, 2, 3>(c_view);
+    tuck.fill_residual();
+  }
 
-  cout << "sqnorm of view " << view.sqnorm() << endl;
-  c_tuck.fill_residual();
-  cout << "sqnorm of view " << view.sqnorm() << endl;
 
 }
 
@@ -917,7 +935,58 @@ void compress_with_octree_method(VDF_REAL_DTYPE* buffer, const size_t Nx, const 
 /* void uncompress_with_octree(double* output_buffer, char* compressed); */
 
 }
+
 extern "C" {
   void compress_with_octree_method(VDF_REAL_DTYPE* buffer, const size_t Nx, const size_t Ny, const size_t Nz, 
-                                   VDF_REAL_DTYPE tolerance, double& compression_ratio){};
-}
+                                   VDF_REAL_DTYPE tolerance, double& compression_ratio)
+    {
+    using namespace Eigen;
+    using namespace tree_compressor;
+    using namespace std;
+
+    TensorMap<Tensor<VDF_REAL_DTYPE, 3,ColMajor>> datamap(buffer, Nx, Ny, Nz);
+    Tensor<VDF_REAL_DTYPE, 3, ColMajor> datatensor(datamap);
+
+    typedef size_t UI;
+
+    indexrange<UI, 3> K({0,0,0},{UI(Nx-1),UI(Ny-1),UI(Nz-1)});
+
+    auto view = TensorView<VDF_REAL_DTYPE, UI, 3>(datatensor, K);
+
+    auto tree = leaf<indexrange<UI, 3>>();
+    tree.data = K;
+
+    auto res0 = view.get_residual();
+
+    const int maxiter = 40;
+    for(int iter=0; iter<maxiter; iter++) {
+      cout << "iter: " << iter << " sqnorm of view " << view.sqnorm() << "\t\t|\t";
+
+      VDF_REAL_DTYPE residual = -1.0;
+
+      // find worst leaf
+      leaf<indexrange<UI,3>>* worst_leaf;
+      for (auto it = tree.begin(); it != tree.end(); ++it) {
+        auto& leaf = (*it);
+        auto c_view = TensorView<VDF_REAL_DTYPE, UI, 3>(datatensor, leaf.data);
+        VDF_REAL_DTYPE c_residual = c_view.get_residual();
+        if (c_residual > residual) {
+          residual = c_residual;
+          worst_leaf = &leaf;
+        }
+      };
+
+      // improve worst leaf
+      cout << "worst leaf: " << worst_leaf->level << " : "<<  worst_leaf->data << " residual: " << residual << endl;
+      divide(*worst_leaf);
+      auto c_view = TensorView<VDF_REAL_DTYPE, UI, 3>(datatensor, worst_leaf->data);
+      auto tuck = Tucker<VDF_REAL_DTYPE, UI, 2, 3>(c_view);
+      tuck.fill_residual();
+    }
+
+    auto tucker = Tucker<VDF_REAL_DTYPE, UI, 2, 3>(view);
+    tucker.make_core();
+    tucker.fill_residual(VDF_REAL_DTYPE(0), 1/tucker.getScale() );
+    }
+
+};

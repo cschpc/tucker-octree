@@ -11,7 +11,7 @@ int main(int argc, const char** argv) {
     bool &help = flag("h,help", "help");
     vector<int> &tucker = kwarg("t,tucker", "Test tucker functionality with given tensor size.").set_default("-1");
     vector<uint16_t> &normaltest = kwarg("n,normalsizes", "Size of normal-vector product tensor").set_default("0,0,0");
-    bool &treetest = flag("T,tree", "Test octree + tucker");
+    vector<size_t> &treetest = kwarg("T,tree", "Test octree + tucker. Param: maxiter (10)").set_default("0");
   };
 
 
@@ -22,6 +22,7 @@ int main(int argc, const char** argv) {
   auto tensorsizes = args.tensorsizes;
   auto normalsize = args.normaltest;
   auto tuckersize = args.tucker;
+  auto maxiter = args.treetest;
 
   if (tensorsizes[0] > 0) test_tensorsizes(tensorsizes);
 
@@ -32,6 +33,6 @@ int main(int argc, const char** argv) {
   if (tuckersize[0] > 0) test_tucker(tuckersize[0]);
 
   cout << "\ntesting tree next\n";
-  if (args.treetest) test_tree();
+  if (maxiter[0] > 0) test_tree(maxiter[0]);
 
 }

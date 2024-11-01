@@ -27,53 +27,88 @@ public:
     }
   }
 
-  class Iterator;
-  Iterator begin() { return Iterator(this); }
+  class LeafIterator;
+  LeafIterator begin() { return LeafIterator(this); }
+  LeafIterator end() { return LeafIterator(nullptr); }
+
+  class NodeIterator;
+  NodeIterator begin_nodes() { return NodeIterator(this); }
+  NodeIterator end_nodes() { return NodeIterator(this); }
 };
 
 template <typename T>
-struct leaf<T>::Iterator {
-public:
-  using iterator_category = std::forward_iterator_tag;
-  using value_type = leaf<T>;
-  using pointer = leaf<T>*;
-  using reference  = leaf<T>&;
+struct leaf<T>::NodeIterator : leaf<T>::LeafIterator {
 
-  Iterator(pointer ptr) {
-    if (ptr) this->stack.push(ptr);
-    moveToNextValid();
-  };
+  /* using iterator_category = std::forward_iterator_tag; */
 
-  /* reference operator*() const { return *ptr;} */
-  
-  /* pointer operator->() { return ptr; } */
+private:
 
-  // prefix increment
-  Iterator& operator++ () {
-    moveToNextValid();
-    return stack.top();
+  void moveToNextValid() {
+
+    this->curr = nullptr;
+
+    if (!this->stack.empty()) {
+      leaf<T>* node = this->stack.top();
+
+      this->stack.pop();
+      if (!node->children) {
+        return;
+      }
+
+      for (int i = 0; i < node->n_children; i++) {
+        this->stack.push(&(node->children[i]));
+      }
+
+    }
   }
 
-  // postfix increment
-  Iterator& operator++(int) {
-    leaf<T>* tmp = stack.top();
-    ++this;
-    return tmp;
+};
+
+template <typename T>
+struct leaf<T>::LeafIterator {
+public:
+  using iterator_category = std::forward_iterator_tag;
+
+  LeafIterator(leaf<T>* ptr) {
+    this->curr = ptr;
+    if (ptr) this->stack.push(ptr);
+    this->moveToNextValid();
+  };
+
+  leaf<T>& operator*() { return *(this->curr); }
+  
+  // prefix increment
+  leaf<T>* operator++ () {
+    moveToNextValid();
+    return this->stack.top();
+  }
+
+  bool atend() const {
+    return this->stack.empty();
+  }
+
+  bool operator==(const LeafIterator& R) {
+    return this->curr == R.curr;
+  }
+
+  bool operator!=(const LeafIterator& R) {
+    return this->curr != R.curr;
   }
 
 private:
   std::stack<leaf<T>*> stack;
+  leaf<T>* curr;
 
-  void moveToNextValid() {
-    while (!stack.empty) {
+  virtual void moveToNextValid() {
+    this->curr = nullptr;
+    while (!stack.empty()) {
       leaf<T>* node = stack.top();
 
-      if (!node->children) return; // No children, top of stack is good.
+      stack.pop();
+      if (!node->children) {curr = node; return;}
 
-      stack.pop(); // Otherwise push its children to stack
       for (int i = 0; i < node->n_children; i++) stack.push(&(node->children[i]));
     }
   }
 };
-
 }
