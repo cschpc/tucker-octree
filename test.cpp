@@ -150,7 +150,7 @@ void test_tree(size_t maxiter) {
     // improve worst leaf
     cout << "worst leaf: " << worst_leaf->level << " : "<<  worst_leaf->data << " residual: " << residual << endl;
     divide(*worst_leaf);
-    /* Tucker::view should be a shared pointer */
+
     std::unique_ptr<TensorView<double,UI,3>> c_view(new TensorView<double,UI,3>(datatensor, worst_leaf->data));
     std::unique_ptr<Tucker<double, UI, 2, 3>> tuck(new Tucker<double,UI,2,3>(std::move(c_view))); /* TODO: save tucker to leaf! */
     tuck->fill_residual();

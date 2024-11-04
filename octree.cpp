@@ -742,8 +742,7 @@ void compress_with_octree_method(VDF_REAL_DTYPE* buffer, const size_t Nx, const 
 
 extern "C" {
   void compress_with_octree_method(VDF_REAL_DTYPE* buffer, const size_t Nx, const size_t Ny, const size_t Nz, 
-                                   VDF_REAL_DTYPE tolerance, double& compression_ratio)
-    {
+                                   VDF_REAL_DTYPE tolerance, double& compression_ratio) {
     using namespace Eigen;
     using namespace tree_compressor;
     using namespace std;
@@ -763,8 +762,16 @@ extern "C" {
     auto res0 = view.get_residual();
 
     const int maxiter = 40;
-    for(int iter=0; iter<maxiter; iter++) {
-      cout << "iter: " << iter << " sqnorm of view " << view.sqnorm() << "\t\t|\t";
+
+    std::stack<unique_ptr<Tucker<VDF_REAL_DTYPE,UI,2,3>>> tuck_stack;
+
+    VDF_REAL_DTYPE relres = 10.0;
+    
+    size_t iter = 0;
+
+    while((iter < maxiter) && (relres > tolerance)) {
+      ++iter;
+      /* cout << "iter: " << iter << " sqnorm of view " << view.sqnorm() << "\t\t|\t"; */
 
       VDF_REAL_DTYPE residual = -1.0;
 
@@ -781,16 +788,26 @@ extern "C" {
       };
 
       // improve worst leaf
-      cout << "worst leaf: " << worst_leaf->level << " : "<<  worst_leaf->data << " residual: " << residual << endl;
+      relres = residual/res0;
+
+      /* cout << "tol: " << tolerance << " worst leaf: " << worst_leaf->level << " : "<<  worst_leaf->data << " residual: " << relres << endl; */
       divide(*worst_leaf);
-      auto c_view = TensorView<VDF_REAL_DTYPE, UI, 3>(datatensor, worst_leaf->data);
-      auto tuck = Tucker<VDF_REAL_DTYPE, UI, 2, 3>(c_view);
-      tuck.fill_residual();
+
+      std::unique_ptr<TensorView<VDF_REAL_DTYPE,UI,3>> c_view(new TensorView<VDF_REAL_DTYPE,UI,3>(datatensor, worst_leaf->data));
+      std::unique_ptr<Tucker<VDF_REAL_DTYPE, UI, 2, 3>> tuck(new Tucker<VDF_REAL_DTYPE,UI,2,3>(std::move(c_view))); /* TODO: save tucker to leaf! */
+      tuck->fill_residual();
+      tuck_stack.push(std::move(tuck));
     }
 
-    auto tucker = Tucker<VDF_REAL_DTYPE, UI, 2, 3>(view);
-    tucker.make_core();
-    tucker.fill_residual(VDF_REAL_DTYPE(0), 1/tucker.getScale() );
+    view.fill(VDF_REAL_DTYPE(0));
+
+    /* TODO: serialize tuck_stack  */
+    while(!tuck_stack.empty()) {
+      Tucker<VDF_REAL_DTYPE,UI,2,3>& tuck = *(tuck_stack.top());
+      tuck.fill_residual(VDF_REAL_DTYPE(1), VDF_REAL_DTYPE(1));
+      tuck_stack.pop();
     }
+
+  }
 
 };
