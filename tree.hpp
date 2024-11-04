@@ -39,7 +39,7 @@ public:
 template <typename T>
 struct leaf<T>::NodeIterator : leaf<T>::LeafIterator {
 
-  /* using iterator_category = std::forward_iterator_tag; */
+  using iterator_category = std::forward_iterator_tag;
 
 private:
 

@@ -22,6 +22,7 @@
 #endif
 
 #define MIN(a,b) a<b?a:b
+#define MAX(a,b) a>b?a:b
 
 #define assertm(expression, message) assert(((void)message, expression))
 
@@ -48,7 +49,6 @@ void here() {
   logging::count++;
 #endif
 }
-
 
 template <typename T, size_t N>
 class indexrange 
@@ -225,6 +225,17 @@ public:
 
   // TODO: iterator over elements so we wouldn't need always do std::enable_if_t
 
+
+  template<size_t N_ = N, std::enable_if_t<N_==3,int> = 0, typename... Ts>
+    void fill(T x) {
+      for (size_t i3 = 0; i3 < this->size(2); i3++) 
+      for (size_t i2 = 0; i2 < this->size(1); i2++) 
+      for (size_t i1 = 0; i1 < this->size(0); i1++) 
+        {
+        (*this)(i1,i2,i3) = x;
+        }
+    }
+
   template<size_t N_ = N, std::enable_if_t<N_==3,int> = 0, typename... Ts>
     T get_residual() {
 
@@ -329,7 +340,6 @@ public:
 
 };
 
-
 template <typename T, typename L, size_t N>
 std::ostream& operator <<(std::ostream &o, const TensorView<T,L,N>& view) {
   using namespace std;
@@ -347,13 +357,6 @@ std::ostream& operator <<(std::ostream &o, const TensorView<T,L,N>& view) {
        }
   return o;
 }
-
-/* void fold_tensor_to_normal_matrix(const TensorView<T,L,3>& A, uint8_t mode, Eigen::Tensor<T,2,Eigen::ColMajor>& R) { */
-/* void fold_tensor_to_normal_matrix(const TensorView<T,L,3>& A, uint8_t mode, Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>& R) { */
-
-/* M should support resize(P,Q) and M(i,j) indexing. For example Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> */
-
-/* This is very slow... */
 
 template <typename T, typename L, typename M>
 void fold_tensor_to_normal_matrix(const TensorView<T,L,3>& A, uint8_t mode, M& R) {
@@ -431,11 +434,6 @@ void fold_tensor_vector_prod(const TensorView<T,L,3>& A, uint8_t mode,
  }
 
 }
-
-
-/* TODO: 
- * - This becomes slow w/ big tensors
- * - Make a POD version of this */
 
 template <typename T, typename L>
 void fold_tensor_vector_prod(const TensorView<T,L,3>& A, uint8_t mode, 
@@ -560,26 +558,6 @@ void fold_tensor_vector_prod(const TensorView<T,L,3>& A, const uint8_t mode,
 
   }
 
-  /*----------------------------*/
-#if 0
-  for (size_t i = 0; i < len[0]; i++) {
-    for (size_t j = 0; j < len[1]; j++) {
-      for (size_t k = 0; k < len[2]; k++) { 
-        ijk = {i,j,k};
-        J = A.get_J((uint8_t) mode, i+1,j+1,k+1)-1;
-        I = ijk[mode];
-        work[J] = work[J] + A(i,j,k)*x_in[I];
-      }}}
-
-  for (size_t i = 0; i < len[0]; i++) {
-    for (size_t j = 0; j < len[1]; j++) {
-      for (size_t k = 0; k < len[2]; k++) { 
-        ijk = {i,j,k};
-        size_t J = A.get_J(mode, i+1,j+1,k+1)-1;
-        size_t I = ijk[mode];
-        y_out[I] = y_out[I] + A(i,j,k)*work[J];
-      }}}
-#endif
 }
 
 template <typename T, typename L, size_t N>
@@ -622,47 +600,11 @@ public:
 };
 
 
-void test_normalprods(std::vector<uint16_t> sizes) {
-  using namespace std;
-  using namespace Eigen;
-  auto datatensor = Tensor<double, 3, ColMajor>(sizes[0],sizes[1],sizes[2]);
-
-  for (int i3 = 0; i3 < sizes[2]; i3++) for (int i2 = 0; i2 < sizes[1]; i2++) for (int i1 = 0; i1 < sizes[0]; i1++)
-  datatensor(i1,i2,i3) = sin((M_PIf*(i1+i2+i3))/(sizes[1]+sizes[2]+sizes[0])/3.0);
-
-  std::array<uint16_t,3> siz = {uint16_t(int(sizes[0])-1), uint16_t(int(sizes[1])-1), uint16_t(int(sizes[2])-1)};
-  std::array<uint16_t,3> zer = {0,0,0};
-  indexrange<uint16_t,3> K(zer, siz);
-
-  /* std::cout << siz[0] << " " << siz[1] << " " << siz[2] << endl; */
-  auto view = TensorView<double, uint16_t,3>(datatensor, K);
-  auto res = view.get_residual();
-
-  NormalFoldProd<double,uint16_t, 3> op(view, 1/res);
-
-  const int modes[3] = {1,0,2};
-  for (int n = 0; n < 3; n++) {
-    const int mode = modes[n];
-  op.setMode(mode);
-  double* x = new double[op.rows()];
-  double* y = new double[op.rows()];
-
-  for(int i = 0; i<op.rows(); i++) x[i] = double(i);
-  for(int i = 0; i<op.rows(); i++) y[i] = double(i);
-
-  starttime
-    op.perform_op(x,y);
-  endtime
-    cout << ", ";
-  delete[] x; delete[] y;
-  }
-}
-
 template<typename T, typename L, size_t core_rank, size_t N>
 struct Tucker {
 private:
   TensorView<T,L,N>& view;
-  T residual = T(0);
+  std::unique_ptr<TensorView<T,L,N>> view_ptr; /* Can this be unique_ptr? */
   T scale;
 public:
 
@@ -671,7 +613,73 @@ public:
   Eigen::Tensor<T, N> core;
   std::array<Eigen::Matrix<T, Eigen::Dynamic,core_rank>, N> factors;
 
-  Tucker(TensorView<T,L,N>& view) : view(view) {
+  Tucker(std::unique_ptr<TensorView<T,L,N>> view_ptr) : view(*view_ptr), view_ptr(std::move(view_ptr)) { 
+    this->init(); 
+  }
+
+  Tucker(TensorView<T,L,N>& view) : view(view), view_ptr(&view) {
+    this->init();
+  }
+
+
+  template<size_t N_ = N, std::enable_if_t<N_==3,int> = 0>
+  void make_core() {
+    this->core.resize(core_rank, core_rank, core_rank);
+
+    for(size_t j1 = 0; j1<core_rank; j1++) {
+      for(size_t j2 = 0; j2<core_rank; j2++) {
+        for(size_t j3 = 0; j3<core_rank; j3++) {
+          core(j1,j2,j3) = T(0);
+        }}}
+
+    for(size_t j1 = 0; j1<core_rank; j1++)
+    for(size_t j2 = 0; j2<core_rank; j2++)
+    for(size_t j3 = 0; j3<core_rank; j3++)
+      {
+      for(size_t i1 = 0; i1<this->view.size(0); i1++) // TODO: correct ranges
+      for(size_t i2 = 0; i2<this->view.size(1); i2++)
+      for(size_t i3 = 0; i3<this->view.size(2); i3++)
+        {
+        this->core(j1,j2,j3) = this->core(j1,j2,j3) + 
+          (this->view(i1,i2,i3))*
+          (this->factors[0](i1,j1))*
+          (this->factors[1](i2,j2))*
+          (this->factors[2](i3,j3));
+
+        }
+      }
+  }
+
+  template<size_t N_ = N, std::enable_if_t<N_==3,int> = 0>
+  void fill_residual() {
+    /* No scaling here, core is computed via projections with factors! */
+    this->fill_residual(VDF_REAL_DTYPE(1), VDF_REAL_DTYPE(-1)); 
+  }
+
+  /* Warning! Mutates the view contents! */
+  template<size_t N_ = N, std::enable_if_t<N_==3,int> = 0>
+  void fill_residual(const VDF_REAL_DTYPE mult_orig, const VDF_REAL_DTYPE mult_corr) {
+
+    for(size_t i1 = 0; i1 < view.size(0); i1++)
+    for(size_t i2 = 0; i2 < view.size(1); i2++)
+    for(size_t i3 = 0; i3 < view.size(2); i3++) {
+      T acc = T(0);
+      for(size_t j1 = 0; j1 < core_rank; j1++)
+      for(size_t j2 = 0; j2 < core_rank; j2++)
+      for(size_t j3 = 0; j3 < core_rank; j3++) {
+        acc = acc + 
+          this->core(j1,j2,j3)*
+          this->factors[0](i1,j1)*
+          this->factors[1](i2,j2)*
+          this->factors[2](i3,j3);
+      }
+    this->view(i1,i2,i3) = mult_orig*this->view(i1,i2,i3) + mult_corr*acc;
+    }
+  }
+
+private: 
+  void init() {
+    auto view = this->view;
 
     /* TODO: Spectra might struggle finding eigenspaces of big linear ops (300x300 is too big?!)*/
     using namespace Spectra;
@@ -682,10 +690,10 @@ public:
     }
 
     /* TODO: too smart scaling, die gracefully if res < epsilon */
-    auto res = view.get_residual();
+    auto res = MAX(VDF_REAL_DTYPE(1e-16), view.get_residual());
     this->scale = 1/res;
 
-    NormalFoldProd<T,L,N> op(this->view, this->scale);
+    NormalFoldProd<T, L, N> op(this->view, this->scale);
 
     for (size_t mode=0; mode<3; mode++) {
       op.setMode(mode);
@@ -718,211 +726,7 @@ public:
 
   }
 
-  template<size_t N_ = N, std::enable_if_t<N_==3,int> = 0>
-  void make_core() {
-    this->core.resize(core_rank, core_rank, core_rank);
-
-    for(size_t j1 = 0; j1<core_rank; j1++) {
-      for(size_t j2 = 0; j2<core_rank; j2++) {
-        for(size_t j3 = 0; j3<core_rank; j3++) {
-          core(j1,j2,j3) = T(0);
-        }}}
-
-    for(size_t j1 = 0; j1<core_rank; j1++)
-    for(size_t j2 = 0; j2<core_rank; j2++)
-    for(size_t j3 = 0; j3<core_rank; j3++)
-      {
-      for(size_t i1 = 0; i1<this->view.size(0); i1++) // TODO: correct ranges
-      for(size_t i2 = 0; i2<this->view.size(1); i2++)
-      for(size_t i3 = 0; i3<this->view.size(2); i3++)
-        {
-        this->core(j1,j2,j3) = this->core(j1,j2,j3) + 
-          (this->view(i1,i2,i3))*
-          (this->factors[0](i1,j1))*
-          (this->factors[1](i2,j2))*
-          (this->factors[2](i3,j3));
-
-        }
-      }
-  }
-
-  template<size_t N_ = N, std::enable_if_t<N_==3,int> = 0>
-  void fill_residual() {
-    this->fill_residual(VDF_REAL_DTYPE(1), VDF_REAL_DTYPE(-1));
-  }
-  /* Warning! Mutates the view contents! */
-
-  template<size_t N_ = N, std::enable_if_t<N_==3,int> = 0>
-  void fill_residual(const VDF_REAL_DTYPE mult_orig, const VDF_REAL_DTYPE mult_corr) {
-
-    for(size_t i1 = 0; i1 < view.size(0); i1++)
-    for(size_t i2 = 0; i2 < view.size(1); i2++)
-    for(size_t i3 = 0; i3 < view.size(2); i3++) {
-      T acc = T(0);
-      for(size_t j1 = 0; j1 < core_rank; j1++)
-      for(size_t j2 = 0; j2 < core_rank; j2++)
-      for(size_t j3 = 0; j3 < core_rank; j3++) {
-        acc = acc + 
-          this->core(j1,j2,j3)*
-          this->factors[0](i1,j1)*
-          this->factors[1](i2,j2)*
-          this->factors[2](i3,j3);
-      }
-    this->view(i1,i2,i3) = mult_orig*this->view(i1,i2,i3) + mult_corr*acc;
-    }
-    this->residual = this->view.get_residual();
-  }
-
-  T get_residual() { return this->residual; }
-
 };
-
-void test_tensorsizes(std::vector<uint16_t> tensorsizes) {
-  using namespace std;
-  using namespace Eigen;
-  const uint16_t tensorsize = tensorsizes[0];
-
-  auto datatensor = Tensor<double, 3, ColMajor>(tensorsize,tensorsize,tensorsize);
-
-  for (int i3 = 0; i3 < tensorsize; i3++) for (int i2 = 0; i2 < tensorsize; i2++) for (int i1 = 0; i1 < tensorsize; i1++)
-  datatensor(i1,i2,i3) = sin(M_PIf*(i1+i2+i3)/tensorsize);
-
-  for (uint16_t tensorsize_m = tensorsizes[1]; tensorsize_m < tensorsizes[2]; tensorsize_m+= tensorsizes[3]){
-    indexrange<uint16_t,3> K({0,0,0},{tensorsize_m,tensorsize_m,tensorsize_m});
-    auto view = TensorView<double, uint16_t, 3>(datatensor, K);
-
-    cout << tensorsize << ", " << tensorsize_m << ",";
-    for (size_t mode=0;mode<3;mode++) {
-      starttime
-        using namespace Spectra;
-
-      NormalFoldProd<double, uint16_t, 3> op(view, double(1));
-      op.setMode(mode);
-      SymEigsSolver<NormalFoldProd<double, uint16_t, 3>> eigs(op, 2, 6);
-
-      eigs.init();
-      int nconv = eigs.compute(SortRule::LargestMagn);
-      Vector<double, Dynamic> evalues;
-
-      if (eigs.info() == CompInfo::Successful) evalues = eigs.eigenvalues();
-      endtime
-        if (mode < 2) cout << ",";
-    }
-    cout << endl;
-  }
-}
-
-void test_indexing() {
-  using namespace Eigen;
-  using namespace std;
-  auto datatensor = Tensor<double, 3, ColMajor>(10,20,30);
-  indexrange<uint16_t, 3> K({0,0,0},{9,19,29});
-  auto view = TensorView<double, uint16_t, 3>(datatensor, K);
-
-  for (int mode = 0; mode < 3; mode++){
-  for (int i = 1; i<=10; i++) {
-    for (int j = 1 ; j<=20;j++) {
-      cout << view.get_J(mode, i,j,15) << '\t';
-    }
-    cout << endl;
-  }
-  cout << endl;
-  }
-
-}
-
-void test_tucker(int big_N) {
-  using namespace Eigen;
-  using namespace std;
-  /* const int big_N = 255; */
-  typedef size_t UI;
-  auto datatensor = Tensor<double, 3, ColMajor>(big_N,big_N,big_N);
-  indexrange<UI, 3> K({0,0,0},{UI(big_N-1),UI(big_N-1),UI(big_N-1)});
-
-  auto view = TensorView<double, UI, 3>(datatensor, K);
-
-  auto f = [&](int I) {return M_PIf64*(I+1)/big_N;};
-
-  for (int i = 0; i<view.size(0); i++) {
-    for (int j = 0 ;j<view.size(1); j++) {
-      for (int k = 0 ;k<view.size(2); k++) {
-        view(i,j,k) = sin(f(i))*sin(f(j))*cos(f(k));
-      }}}
-
-  cout << "sqnorm of view " << view.sqnorm() << endl;
-
-  starttime
-
-  auto tucker = Tucker<double, UI, 2, 3>(view);
-
-  tucker.make_core();
-  for (int i3 = 0; i3 < 2; i3++) {
-    for (int i1 = 0; i1 < 2; i1++) {
-      for (int i2 = 0; i2 < 2; i2++) {
-        cout << tucker.core(i1,i2,i3) << " ";
-      }
-      cout << endl;
-    }
-    cout << endl;
-  }
-  tucker.fill_residual();
-  cout << "sqnorm of view " << view.sqnorm() << endl << endl;
-  cout << "timing: ";
-  endtime
-
-}
-
-void test_tree(size_t maxiter) {
-  using namespace Eigen;
-  using namespace std;
-  /* const int big_N = 255; */
-  typedef size_t UI;
-  UI big_N = 100;
-  auto datatensor = Tensor<double, 3, ColMajor>(big_N,big_N,big_N);
-  indexrange<UI, 3> K({0,0,0},{UI(big_N-1),UI(big_N-1),UI(big_N-1)});
-
-  auto tree = leaf<indexrange<UI,3>>();
-  tree.data = K;
-
-  /* divide(tree); */
-
-  auto f = [&](int I) {return M_PIf64*(I+1)/big_N;};
-  auto F = [&](int I1, int I2, int I3) {return exp(pow((I1+I2+I3)/(3.0*big_N),2))*sin(M_PIf64*(I1+I2+I3+1)/big_N);};
-
-  auto view = TensorView<double,UI,3>(datatensor, K);
-  for (int i1 = 0; i1<view.size(0); i1++) {
-  for (int i2 = 0; i2<view.size(0); i2++) {
-  for (int i3 = 0; i3<view.size(0); i3++) {
-    view(i1,i2,i3) = F(i1,i2,i3);
-  }}}
-
-  for(int iter=0; iter<maxiter; iter++) {
-    cout << "iter: " << iter << " sqnorm of view " << view.sqnorm() << "\t\t|\t";
-
-    double residual = -1.0;
-
-    // find worst leaf
-    leaf<indexrange<UI,3>>* worst_leaf;
-    for (auto it = tree.begin(); it != tree.end(); ++it) {
-      auto& leaf = (*it);
-      auto c_view = TensorView<double, UI, 3>(datatensor, leaf.data);
-      double c_residual = c_view.get_residual();
-      if (c_residual > residual) {
-        residual = c_residual;
-        worst_leaf = &leaf;
-      }
-    };
-
-    // improve worst leaf
-    cout << "worst leaf: " << worst_leaf->level << " : "<<  worst_leaf->data << " residual: " << residual << endl;
-    divide(*worst_leaf);
-    auto c_view = TensorView<double, UI, 3>(datatensor, worst_leaf->data);
-    auto tuck = Tucker<double, UI, 2, 3>(c_view);
-    tuck.fill_residual();
-  }
-
-
-}
 
 /* expose this to vlasiator */
 
