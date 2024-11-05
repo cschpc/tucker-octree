@@ -4,22 +4,16 @@ PROJECT(VDF_OCTREE CXX C)
 
 set(Eigen3_DIR "/home/jkataja/opt/eigen/vlasiator-3.22.1/share/eigen3/cmake" CACHE PATH "")
 set(hip_cpu_rt_DIR "/home/jkataja/opt/hipcpu/share/hip_cpu_rt/cmake" CACHE PATH "")
-# set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE CACHE BOOL "")
 option(CMAKE_EXPORT_COMPILE_COMMANDS "export compile_commands.json" ON)
 
-# SET(TUCKER_MPI_SERIAL_ROOT "$ENV{TUCKER_MPI_SERIAL_ROOT}" CACHE PATH "")
-# SET(TUCKER_MPI_SERIAL_ROOT "$ENV{HOME}/opt/TuckerMPI/serial" CACHE PATH "")
 set(CMAKE_BUILD_TYPE "RelWIthDebInfo" CACHE STRING "")
 
-find_package (Eigen3 3.3 REQUIRED NO_MODULE)
-
+find_package(Eigen3 3.3 REQUIRED NO_MODULE)
 
 option(WITH_HIP "Use HIP" OFF)
 
 add_library(octree_compressor octree.cpp)
 ADD_EXECUTABLE(octree test.cpp)
-
-# install(lib octree_compressor)
 
 target_link_libraries (octree_compressor Eigen3::Eigen)
 target_link_libraries (octree Eigen3::Eigen octree_compressor)

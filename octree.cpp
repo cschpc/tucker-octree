@@ -17,6 +17,10 @@
 
 #include "tree.hpp"
 
+extern "C" {
+#include "octree_compressor.h"
+}
+
 #ifndef VDF_REAL_DTYPE
 #define VDF_REAL_DTYPE float
 #endif
@@ -731,8 +735,8 @@ private:
 /* expose this to vlasiator */
 
 /* In testing */
-void compress_with_octree_method(VDF_REAL_DTYPE* buffer, const size_t Nx, const size_t Ny, const size_t Nz, 
-                                 VDF_REAL_DTYPE tolerance, double& compression_ratio){};
+/* void compress_with_octree_method(VDF_REAL_DTYPE* buffer, const size_t Nx, const size_t Ny, const size_t Nz, */ 
+/*                                  VDF_REAL_DTYPE tolerance, double& compression_ratio){}; */
 
 /* In production */
 /* void compress_with_octree(double* input_buffer, size_t Nx, ..., char* compressed); */
@@ -741,6 +745,7 @@ void compress_with_octree_method(VDF_REAL_DTYPE* buffer, const size_t Nx, const 
 }
 
 extern "C" {
+  /* TODO: deal with situation w/ too small gridsizes */
   void compress_with_octree_method(VDF_REAL_DTYPE* buffer, const size_t Nx, const size_t Ny, const size_t Nz, 
                                    VDF_REAL_DTYPE tolerance, double& compression_ratio) {
     using namespace Eigen;
