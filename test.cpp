@@ -1,4 +1,7 @@
 #include "octree.cpp"
+
+#include <argparse.hpp>
+
 using namespace tree_compressor;
 #define NOTEST
 
@@ -102,12 +105,10 @@ void test_tucker(int big_N) {
 #endif
 }
 
-void test_tree(size_t maxiter) {
+template<typename UI>
+void test_tree(size_t maxiter, UI big_N) {
   using namespace Eigen;
   using namespace std;
-  /* const int big_N = 255; */
-  typedef size_t UI;
-  UI big_N = 150;
   auto datatensor = Tensor<double, 3, ColMajor>(big_N,big_N,big_N);
   indexrange<UI, 3> K({0,0,0},{UI(big_N-1),UI(big_N-1),UI(big_N-1)});
 
@@ -129,6 +130,7 @@ void test_tree(size_t maxiter) {
   }}}
 
   std::stack<unique_ptr<Tucker<double,UI,2,3>>> tuck_stack;
+  std::vector<unique_ptr<Tucker<double,UI,2,3>>> tuckers;
 
   for(int iter=0; iter<maxiter; iter++) {
     cout << "iter: " << iter << " sqnorm of view " << view.sqnorm() << "\t\t|\t";
@@ -154,7 +156,8 @@ void test_tree(size_t maxiter) {
     std::unique_ptr<TensorView<double,UI,3>> c_view(new TensorView<double,UI,3>(datatensor, worst_leaf->data));
     std::unique_ptr<Tucker<double, UI, 2, 3>> tuck(new Tucker<double,UI,2,3>(std::move(c_view))); /* TODO: save tucker to leaf! */
     tuck->fill_residual();
-    tuck_stack.push(std::move(tuck));
+    /* tuck_stack.push(std::move(tuck)); */
+    tuckers.push_back(std::move(tuck));
     /* delete c_view; */
   }
 
@@ -162,12 +165,26 @@ void test_tree(size_t maxiter) {
 
   view.fill(double(0));
 
-  while(!tuck_stack.empty())
-    {
-    Tucker<double,UI,2,3>& tuck = *(tuck_stack.top());
+  for (auto& it : tuckers) {
+    auto& tuck = *(it);
     tuck.fill_residual(double(1), double(1));
-    tuck_stack.pop();
+  }
+
+  auto serialized = SerialTucker<double, UI, 2, 3>(tuckers);
+
+  size_t acc = 1;
+  size_t counter = 1;
+  for (auto& it : serialized.serialized) 
+    {
+    cout << "(" << counter++ << ")" << it << " ";
+    if (acc++ == serialized.size_cores) {
+      cout << "|\n"; 
+      counter=1; 
+    };
+    
     }
+  cout << endl;
+
   cout << "reconstructed sqnorm: " << view.sqnorm() << std::endl;
   for (int i1 = 0; i1<view.size(0); i1++) {
   for (int i2 = 0; i2<view.size(0); i2++) {
@@ -221,13 +238,13 @@ int main(int argc, const char** argv) {
   using namespace Eigen;
   using namespace tree_compressor;
 
-  struct Myargs : public argparse::Args{
+  struct Myargs : public argparse::Args {
     vector<uint16_t> &tensorsizes = kwarg("b,benchmark", "Size of big tensor, size of current view, max size of view, increment").set_default("0,0,0,2");
     bool &indextest = flag("i,indextest", "test indexing");
     bool &help = flag("h,help", "help");
     vector<int> &tucker = kwarg("t,tucker", "Test tucker functionality with given tensor size.").set_default("-1");
     vector<uint16_t> &normaltest = kwarg("n,normalsizes", "Size of normal-vector product tensor").set_default("0,0,0");
-    vector<size_t> &treetest = kwarg("T,tree", "Test octree + tucker. Param: maxiter (10)").set_default("0");
+    vector<size_t> &treetest = kwarg("T,tree", "Test octree + tucker. Param: maxiter, big_N ").set_default("0,4");
   };
 
 
@@ -238,7 +255,7 @@ int main(int argc, const char** argv) {
   auto tensorsizes = args.tensorsizes;
   auto normalsize = args.normaltest;
   auto tuckersize = args.tucker;
-  auto maxiter = args.treetest;
+  auto treeparam = args.treetest;
 
   if (tensorsizes[0] > 0) test_tensorsizes(tensorsizes);
 
@@ -249,6 +266,6 @@ int main(int argc, const char** argv) {
   if (tuckersize[0] > 0) test_tucker(tuckersize[0]);
 
   cout << "\ntesting tree next\n";
-  if (maxiter[0] > 0) test_tree(maxiter[0]);
+  if (treeparam[0] > 0) test_tree(treeparam[0], treeparam[1]);
 
 }

@@ -13,7 +13,6 @@
 #include <Spectra/GenEigsSolver.h>
 
 #include <chrono>
-#include <argparse.hpp>
 
 #include "tree.hpp"
 
@@ -76,8 +75,6 @@ private:
       this->Jk[mode][mode] = 0;
     }
 
-
-
 #ifdef VERBOSE_DEBUG
     for (size_t mode = 0; mode < N; mode++) {
       for (int k = 0; k < N; k++) {
@@ -93,7 +90,6 @@ public:
 
   indexrange<T,N>() {}
   indexrange<T,N>(arr &aa, arr &bb) : a(aa), b(bb) {this->setJk();}
-  /* indexrange<T,N>(std::array<T,N> &aa, std::array<T,N> &bb) : a(aa), b(bb) {this->setJk();} */
   indexrange<T,N>(arr &&aa, arr &&bb) : a(aa), b(bb) {this->setJk();}
 
   std::tuple<T, T> operator()(size_t i) const { return std::make_tuple(this->a[i], this->b[i]); }
@@ -110,19 +106,6 @@ public:
     }
 
   size_t size(uint8_t dim) {return this->b[dim]-this->a[dim] + 1;}
-
-  template <typename S> Eigen::Tensor<S,N> getslice(Eigen::Tensor<S,N> &A) {
-    using namespace Eigen;
-    Eigen::array<Index, N> offsets;
-    Eigen::array<Index, N> extents;
-
-    for (uint8_t dim = 0; dim<N; dim++) {
-      offsets[dim] = this->a[dim];
-      extents[dim] = this->b[dim] - this->a[dim] + 1;
-    }
-
-    return A.slice(offsets, extents); // TODO: this returns a copy
-  }
 
   template<typename T_, size_t N_>
     friend std::ostream& operator <<(std::ostream &o, const indexrange<T_, N_> R);
@@ -155,7 +138,8 @@ public:
 
 };
 
-template <typename T, size_t N> std::ostream& operator <<(std::ostream &o, const indexrange<T,N> R) 
+template <typename T, size_t N> 
+std::ostream& operator <<(std::ostream &o, const indexrange<T,N> R) 
 {
   for (uint8_t dim=0; dim<3; dim++) {
      o << unsigned(R.a[dim]);
@@ -166,7 +150,8 @@ template <typename T, size_t N> std::ostream& operator <<(std::ostream &o, const
   return o;
 }
 
-template <typename T> leaf<indexrange<T,3>>& divide(leaf<indexrange<T,3>> &root) 
+template <typename T> 
+leaf<indexrange<T,3>>& divide(leaf<indexrange<T,3>> &root) 
 {
 
   if (!(root.children == NULL)) return root;
@@ -182,7 +167,8 @@ template <typename T> leaf<indexrange<T,3>>& divide(leaf<indexrange<T,3>> &root)
   return root;
 }
 
-template <typename T> std::ostream& operator <<(std::ostream &o, const leaf<indexrange<T,3>>& root) 
+template <typename T>
+std::ostream& operator <<(std::ostream &o, const leaf<indexrange<T,3>>& root) 
 {
   using namespace std;
 
@@ -339,6 +325,14 @@ public:
 #if VERBOSE_DEBUG
     std::cout << "Requested cosize: " << acc << std::endl;
 #endif
+    return acc;
+  }
+
+  size_t datasize() const {
+    size_t acc = L(1);
+    for (size_t i = 0; i < N; i++) {
+      acc *= this->size(i);
+    };
     return acc;
   }
 
@@ -612,10 +606,12 @@ private:
   T scale;
 public:
 
-  T getScale() const { return this->scale; }
-
+  /* Unclean */
   Eigen::Tensor<T, N> core;
   std::array<Eigen::Matrix<T, Eigen::Dynamic,core_rank>, N> factors;
+
+
+  T getScale() const { return this->scale; }
 
   Tucker(std::unique_ptr<TensorView<T,L,N>> view_ptr) : view(*view_ptr), view_ptr(std::move(view_ptr)) { 
     this->init(); 
@@ -699,7 +695,7 @@ private:
 
     NormalFoldProd<T, L, N> op(this->view, this->scale);
 
-    for (size_t mode=0; mode<3; mode++) {
+    for (size_t mode=0; mode<N; mode++) {
       op.setMode(mode);
       SymEigsSolver<NormalFoldProd<T, L, N>> eigs(op, core_rank, MIN(core_rank+1, view.size(mode)) );
       eigs.init();
@@ -732,6 +728,8 @@ private:
 
 };
 
+/* auto serialize_leaves */
+
 /* expose this to vlasiator */
 
 /* In testing */
@@ -742,11 +740,133 @@ private:
 /* void compress_with_octree(double* input_buffer, size_t Nx, ..., char* compressed); */
 /* void uncompress_with_octree(double* output_buffer, char* compressed); */
 
+template<typename T, typename L, size_t core_rank, size_t N>
+struct SerialTucker {
+  using vecT = std::vector<T>;
+  using vecS = std::vector<size_t>;
+  using uptr = std::unique_ptr<Tucker<T,L,core_rank,N>>;
+
+  vecT serialized;
+  std::array<uint8_t,N> core_dims;
+  vecS factor_lengths;
+  size_t size_cores;
+  SerialTucker(std::vector<uptr>& tuckers) {
+    using namespace std;
+    /* auto this = this; */
+
+    size_t core_size = 1;
+    vector<size_t>& factor_lengths = this->factor_lengths;
+    vector<size_t> factor_inds;
+    size_t total_factorlengths = 0;
+    this->core_dims = {core_rank, core_rank, core_rank};
+
+    for (auto x : this->core_dims) core_size *= x;
+
+    factor_inds.push_back(1);
+    for (auto &tuck : tuckers) {
+
+      size_t acc = 0;
+      for (int n = 0; n < N; n++) acc += tuck->factors[n].size();
+      total_factorlengths += acc;
+
+      factor_lengths.push_back(acc);
+      factor_inds.push_back(factor_inds.back() + acc);
+    }
+
+    size_t ser_len = tuckers.size()*core_size + total_factorlengths;
+
+    vector<T> &serialized = this->serialized;
+    serialized.resize(ser_len);
+
+    size_t acc = 0;
+    size_t bias; 
+    for (auto &tuck : tuckers) {
+      bias = core_size*acc;
+      for (size_t k = 0; k<core_size; ++k) {
+        serialized[bias + k] = tuck->core.data()[k];
+      }
+      ++acc;
+    }
+
+    bias = core_size*tuckers.size();
+    this->size_cores = bias;
+    acc = 0;
+    for (auto &tuck : tuckers) {
+      for(int n=0; n<N; ++n) {
+        for(int m=0;m<tuck->factors[n].size(); ++m) {
+          serialized[bias+acc] = tuck->factors[n].data()[m];
+          ++acc;
+        }
+      }
+    }
+  }
+  
+};
+
+// TODO: deprecated
+template<typename T, typename L, size_t core_rank, size_t N>
+std::unique_ptr<SerialTucker<T,L,core_rank, N>> serialize_tuckers(std::vector<std::unique_ptr<Tucker<T,L,core_rank, N>>> &tuckers) {
+
+  using namespace std;
+
+  unique_ptr<SerialTucker<T,L,core_rank,N>> S(new SerialTucker<T,L,core_rank,N>());
+
+  S->core_dims = {core_rank, core_rank, core_rank};
+
+  size_t core_size = 1;
+  vector<size_t>& factor_lengths = S->factor_lengths;
+  vector<size_t> factor_inds;
+  size_t total_factorlengths = 0;
+
+  for (auto x : S->core_dims) core_size *= x;
+
+  factor_inds.push_back(1);
+  for (auto &tuck : tuckers) {
+
+    size_t acc = 0;
+    for (int n = 0; n < N; n++) acc += tuck->factors[n].size();
+    total_factorlengths += acc;
+
+    factor_lengths.push_back(acc);
+    factor_inds.push_back(factor_inds.back() + acc);
+  }
+
+  size_t ser_len = tuckers.size()*core_size + total_factorlengths;
+
+  vector<T> &serialized = S->serialized;
+  serialized.resize(ser_len);
+
+  size_t acc = 0;
+  size_t bias; 
+  for (auto &tuck : tuckers) {
+    bias = core_size*acc;
+    for (size_t k = 0; k<core_size; ++k) {
+      serialized[bias + k] = tuck->core.data()[k];
+    }
+    ++acc;
+  }
+
+  bias = core_size*tuckers.size();
+  S->size_cores = bias;
+  acc = 0;
+  for (auto &tuck : tuckers) {
+    for(int n=0; n<N; ++n) {
+      for(int m=0;m<tuck->factors[n].size(); ++m) {
+        serialized[bias+acc] = tuck->factors[n].data()[m];
+        ++acc;
+      }
+    }
+  }
+
+  return S;
+}
+
 }
 
 extern "C" {
   /* TODO: deal with situation w/ too small gridsizes */
-  void compress_with_octree_method(VDF_REAL_DTYPE* buffer, const size_t Nx, const size_t Ny, const size_t Nz, 
+  void compress_with_octree_method(VDF_REAL_DTYPE* buffer, 
+                                   const size_t Nx, const size_t Ny, const size_t Nz, 
                                    VDF_REAL_DTYPE tolerance, double& compression_ratio) {
     using namespace Eigen;
     using namespace tree_compressor;
@@ -768,7 +888,7 @@ extern "C" {
 
     const int maxiter = 40;
 
-    std::stack<unique_ptr<Tucker<VDF_REAL_DTYPE,UI,2,3>>> tuck_stack;
+    std::vector<unique_ptr<Tucker<VDF_REAL_DTYPE,UI,2,3>>> tuckers;
 
     VDF_REAL_DTYPE relres = 10.0;
     
@@ -801,16 +921,13 @@ extern "C" {
       std::unique_ptr<TensorView<VDF_REAL_DTYPE,UI,3>> c_view(new TensorView<VDF_REAL_DTYPE,UI,3>(datatensor, worst_leaf->data));
       std::unique_ptr<Tucker<VDF_REAL_DTYPE, UI, 2, 3>> tuck(new Tucker<VDF_REAL_DTYPE,UI,2,3>(std::move(c_view))); /* TODO: save tucker to leaf! */
       tuck->fill_residual();
-      tuck_stack.push(std::move(tuck));
+      tuckers.push_back(std::move(tuck));
     }
 
     view.fill(VDF_REAL_DTYPE(0));
-
-    /* TODO: serialize tuck_stack  */
-    while(!tuck_stack.empty()) {
-      Tucker<VDF_REAL_DTYPE,UI,2,3>& tuck = *(tuck_stack.top());
+    for (auto& it : tuckers) {
+      auto& tuck = *(it);
       tuck.fill_residual(VDF_REAL_DTYPE(1), VDF_REAL_DTYPE(1));
-      tuck_stack.pop();
     }
 
   }

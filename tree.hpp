@@ -11,6 +11,7 @@
 #include <cstddef>  // For std::ptrdiff_t
 
 namespace tree {
+
 template <typename T> struct leaf {
   T data;
   leaf<T> *children = NULL;
@@ -31,37 +32,6 @@ public:
   LeafIterator begin() { return LeafIterator(this); }
   LeafIterator end() { return LeafIterator(nullptr); }
 
-  class NodeIterator;
-  NodeIterator begin_nodes() { return NodeIterator(this); }
-  NodeIterator end_nodes() { return NodeIterator(this); }
-};
-
-template <typename T>
-struct leaf<T>::NodeIterator : leaf<T>::LeafIterator {
-
-  using iterator_category = std::forward_iterator_tag;
-
-private:
-
-  void moveToNextValid() {
-
-    this->curr = nullptr;
-
-    if (!this->stack.empty()) {
-      leaf<T>* node = this->stack.top();
-
-      this->stack.pop();
-      if (!node->children) {
-        return;
-      }
-
-      for (int i = 0; i < node->n_children; i++) {
-        this->stack.push(&(node->children[i]));
-      }
-
-    }
-  }
-
 };
 
 template <typename T>
@@ -76,15 +46,11 @@ public:
   };
 
   leaf<T>& operator*() { return *(this->curr); }
-  
+
   // prefix increment
   leaf<T>* operator++ () {
     moveToNextValid();
     return this->stack.top();
-  }
-
-  bool atend() const {
-    return this->stack.empty();
   }
 
   bool operator==(const LeafIterator& R) {
@@ -111,4 +77,5 @@ private:
     }
   }
 };
+
 }
