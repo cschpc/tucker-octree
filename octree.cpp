@@ -613,6 +613,8 @@ public:
 
   T getScale() const { return this->scale; }
 
+  Tucker(Eigen::Tensor<T,N> core, std::array<Eigen::Matrix<T, Eigen::Dynamic, core_rank>, N> factors) : core(core), factors(factors) {}
+
   Tucker(std::unique_ptr<TensorView<T,L,N>> view_ptr) : view(*view_ptr), view_ptr(std::move(view_ptr)) { 
     this->init(); 
   }
@@ -742,14 +744,23 @@ private:
 
 template<typename T, typename L, size_t core_rank, size_t N>
 struct SerialTucker {
+
+private:
   using vecT = std::vector<T>;
   using vecS = std::vector<size_t>;
   using uptr = std::unique_ptr<Tucker<T,L,core_rank,N>>;
 
-  vecT serialized;
   std::array<uint8_t,N> core_dims;
   vecS factor_lengths;
+  vecT serialized;
   size_t size_cores;
+
+public:
+
+  const size_t& getCoreSizes() { return this->size_cores; }
+  const vecT& getSerialized() { return this->serialized; }
+
+  template<size_t N_ = N, std::enable_if_t<N_==3,int> = 0>
   SerialTucker(std::vector<uptr>& tuckers) {
     using namespace std;
     /* auto this = this; */
@@ -800,8 +811,70 @@ struct SerialTucker {
       }
     }
   }
+
+  template<size_t N_ = N, std::enable_if_t<N_==3,int> = 0>
+  /* std::vector<uptr> */ 
+  void Deserialize() {
+    using namespace Eigen;
+    using namespace std;
+
+    const size_t n_per_core = pow(core_rank,N);
+    size_t n_leaves = this->size_cores / n_per_core;
+    std::vector<TensorMap<Tensor<T, N>>> cores;
+    std::vector<std::array<Matrix<T, Dynamic, N>,N>> factorss;
+
+    std::cout << "n_leaves: " << n_leaves << endl;
+    std::cout << "n_per_core: " << n_per_core << endl;
+
+    for (int m = 0; m < n_leaves; ++m) {
+      T* data = this->serialized.data();
+      cores.push_back(TensorMap<Tensor<T,N>>(this->serialized.data()+m*n_per_core, core_rank, core_rank, core_rank));
+    }
+    
+    size_t bias = n_leaves*n_per_core;
+    size_t acc = 0;
+    for (int m = 0; m < n_leaves; ++m) {
+      T* data = this->serialized.data()+bias;
+      const std::array<size_t,3> FL = {this->factor_lengths[acc++], this->factor_lengths[acc++], this->factor_lengths[acc++]};
+      for (auto& it : FL) cout << "FL: " << it << endl;
+
+      factorss.push_back({
+                         Map<Matrix<T, Dynamic, N>>(data+m*FL[0], FL[0]/N, N),
+                         Map<Matrix<T, Dynamic, N>>(data+m*FL[1], FL[1]/N, N),
+                         Map<Matrix<T, Dynamic, N>>(data+m*FL[2], FL[2]/N, N)
+                         });
+      bias += FL[0] + FL[1] + FL[2];
+    }
+
+    int m = 0;
+    for (auto& it : factorss)
+      {
+      cout << "leaf: " << ++m << endl;
+      cout << it[1] << endl;
+      }
+
+  }
   
+  template<typename T_, typename L_, size_t core_rank_, size_t N_>
+    friend std::ostream& operator <<(std::ostream &o, const SerialTucker<T_, L_, core_rank_, N_>& R);
 };
+
+template<typename T_, typename L_, size_t core_rank_, size_t N_>
+std::ostream& operator <<(std::ostream &o, const SerialTucker<T_, L_, core_rank_, N_>& R) {
+
+  using namespace std;
+  string corefactor = "C";
+
+  size_t acc = 1;
+  for (auto& it : R.serialized) {
+    o << corefactor << ", " << acc<< ", " << it << endl;
+    if (acc++ == R.size_cores) {
+      corefactor = "F";
+    }
+  }
+  return o;
+}
+
 
 // TODO: deprecated
 template<typename T, typename L, size_t core_rank, size_t N>
