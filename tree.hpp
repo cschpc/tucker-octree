@@ -12,14 +12,19 @@
 
 namespace tree {
 
-template <typename T> struct leaf {
+/* This is N-tree leaf (or node!) */
+template <typename T, size_t N> struct leaf {
   T data;
-  leaf<T> *children = NULL;
+  leaf<T,N> *children = NULL;
+  leaf<T,N> *parent = NULL;
   size_t level = 0;
   int8_t coordinate = -1; 
-  size_t n_children=0;
+  const size_t n_children = pow(2,3);
 public:
   /* leaf(T data): data(data) {} */
+
+  leaf() {};
+  leaf(T data) : data(data) {};
 
   ~leaf(){
     data.~T();
@@ -34,21 +39,21 @@ public:
 
 };
 
-template <typename T>
-struct leaf<T>::LeafIterator {
+template <typename T, size_t N>
+struct leaf<T,N>::LeafIterator {
 public:
   using iterator_category = std::forward_iterator_tag;
 
-  LeafIterator(leaf<T>* ptr) {
+  LeafIterator(leaf<T,N>* ptr) {
     this->curr = ptr;
     if (ptr) this->stack.push(ptr);
     this->moveToNextValid();
   };
 
-  leaf<T>& operator*() { return *(this->curr); }
+  leaf<T,N>& operator*() { return *(this->curr); }
 
   // prefix increment
-  leaf<T>* operator++ () {
+  leaf<T,N>* operator++ () {
     moveToNextValid();
     return this->stack.top();
   }
@@ -62,13 +67,13 @@ public:
   }
 
 private:
-  std::stack<leaf<T>*> stack;
-  leaf<T>* curr;
+  std::stack<leaf<T,N>*> stack;
+  leaf<T,N>* curr;
 
   virtual void moveToNextValid() {
     this->curr = nullptr;
     while (!stack.empty()) {
-      leaf<T>* node = stack.top();
+      leaf<T,N>* node = stack.top();
 
       stack.pop();
       if (!node->children) {curr = node; return;}

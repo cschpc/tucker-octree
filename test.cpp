@@ -125,13 +125,13 @@ namespace octree_test {
 
       indexrange<UI,3> window({0,0,big_N/2},{UI(big_N-1),UI(big_N-1),UI(big_N/2)});
 
-      auto tree = leaf<indexrange<UI,3>>();
+      auto tree = leaf<indexrange<UI,3>,3>();
       tree.data = K;
 
-      /* divide(tree); */
+      /* divide_leaf(tree); */
 
       auto f = [&](int I) {return M_PIf64*(I+1)/big_N;};
-      auto F = [&](int I1, int I2, int I3) {return exp(pow((I1+I2+I3)/(3.0*big_N),2))*sin(M_PIf64*(I1+I2+I3+1)/big_N);};
+      auto F = [&](int I1, int I2, int I3) {return exp(-pow((I1+I2+I3)/(0.1*big_N),2))*sin(M_PIf64*(I1+I2+I3+1)/(2*big_N));};
 
       auto view = TensorView<double,UI,3>(datatensor, K);
       for (int i1 = 0; i1<view.size(0); i1++) {
@@ -149,7 +149,7 @@ namespace octree_test {
         double residual = -1.0;
 
         // find worst leaf
-        leaf<indexrange<UI,3>>* worst_leaf;
+        leaf<indexrange<UI,3>,3>* worst_leaf;
         for (auto it = tree.begin(); it != tree.end(); ++it) {
           auto& leaf = (*it);
           auto c_view = TensorView<double, UI, 3>(datatensor, leaf.data);
@@ -161,18 +161,25 @@ namespace octree_test {
         };
 
         // improve worst leaf
-        cout << "worst leaf: " << worst_leaf->level << " : "<<  worst_leaf->data << " residual: " << residual << endl;
-        divide(*worst_leaf);
+        cout << "worst leaf: " << worst_leaf->level << " : "<<  worst_leaf->data << " residual: " << residual;
+        divide_leaf(*worst_leaf);
 
         std::unique_ptr<TensorView<double,UI,3>> c_view(new TensorView<double,UI,3>(datatensor, worst_leaf->data));
         std::unique_ptr<Tucker<double, UI, 2, 3>> tuck(new Tucker<double,UI,2,3>(std::move(c_view))); /* TODO: save tucker to leaf! */
         tuck->fill_residual();
+
+        /* OctreeCoordinates<indexrange<UI,3>,3> */ 
+        OctreeCoordinates<3> worst_coords = leaf_to_coordinates(*worst_leaf);
+        cout << "\t|\tworst_coords: " << worst_coords <<":"<<worst_coords.toatomic<int>()<< " and indices: " << K.getsubrange(worst_coords) << endl;
+
+
+        tuck->setCoordinates(worst_coords);
         /* tuck_stack.push(std::move(tuck)); */
         tuckers.push_back(std::move(tuck));
         /* delete c_view; */
       }
 
-      cout << "final sqnorm: " << view.sqnorm() << std::endl;
+      cout << "residual sqnorm: " << view.sqnorm() << std::endl;
 
       view.fill(double(0));
 
@@ -181,7 +188,7 @@ namespace octree_test {
         tuck.fill_residual(double(1), double(1));
       }
 
-      auto serialized = SerialTucker<double, UI, 2, 3>(tuckers);
+      auto serialized = SerialTucker<double, UI, 2, 3>(tuckers, K);
 
       size_t acc = 1;
       size_t counter = 1;
@@ -193,9 +200,9 @@ namespace octree_test {
       }
 
       /* auto detuckers = */ 
-        serialized.Deserialize();
+        /* serialized.Deserialize(); */
 
-      cout << "reconstructed sqnorm: " << view.sqnorm() << std::endl;
+      cout << "reconstructed residual sqnorm: " << view.sqnorm() << std::endl;
       for (int i1 = 0; i1<view.size(0); i1++) {
         for (int i2 = 0; i2<view.size(0); i2++) {
           for (int i3 = 0; i3<view.size(0); i3++) {

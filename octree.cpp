@@ -53,6 +53,13 @@ void here() {
 #endif
 }
 
+/* Forward definitions */
+
+template<size_t N>
+struct OctreeCoordinates;
+
+/* End of forward definitions */
+
 template <typename T, size_t N>
 class indexrange 
 {
@@ -101,7 +108,7 @@ public:
     }
 
   template<typename M0>
-    size_t get_J(uint8_t mode, uint8_t p, M0 rest) const{
+    size_t get_J(uint8_t mode, uint8_t p, M0 rest) const {
       return this->Jk[mode][p]*rest - this->Jk[mode][p];
     }
 
@@ -127,7 +134,6 @@ public:
     return D;
   }
 
-
   const std::array<T,N>& getA() const {
     return this->a;
   }
@@ -136,7 +142,20 @@ public:
     return this->b;
   }
 
+  indexrange<T,N> getsubrange(OctreeCoordinates<N> coords) {
+    indexrange<T,N> acc = *this;
+    leaf<indexrange<T,N>,N> node(*this);
+    leaf<indexrange<T,N>,N>* p_node = &node;
+    for(auto it = coords.getCoords().end(); it-- != coords.getCoords().begin(); ) {
+      uint8_t child = (*it)[2]*4+(*it)[1]*2+(*it)[0];
+      p_node = &divide_leaf(*p_node).children[child];
+      acc = p_node->data;
+    }
+    return acc;
+  }
+
 };
+
 
 template <typename T, size_t N> 
 std::ostream& operator <<(std::ostream &o, const indexrange<T,N> R) 
@@ -151,24 +170,25 @@ std::ostream& operator <<(std::ostream &o, const indexrange<T,N> R)
 }
 
 template <typename T> 
-leaf<indexrange<T,3>>& divide(leaf<indexrange<T,3>> &root) 
+leaf<indexrange<T,3>,3>& divide_leaf(leaf<indexrange<T,3>,3> &root) 
 {
 
   if (!(root.children == NULL)) return root;
 
-  root.children = new leaf<indexrange<T,3>>[8];
-  root.n_children = 8;
+  root.children = new leaf<indexrange<T,3>,3>[root.n_children];
+  /* root.n_children = 8; */
   for(uint8_t lnum = 0; lnum<8; lnum++) {
     root.children[lnum].data = root.data.divide(lnum);
     root.children[lnum].level = root.level + size_t(1);
     root.children[lnum].children = NULL;
     root.children[lnum].coordinate = lnum;
+    root.children[lnum].parent = &root;
   }
   return root;
 }
 
 template <typename T>
-std::ostream& operator <<(std::ostream &o, const leaf<indexrange<T,3>>& root) 
+std::ostream& operator <<(std::ostream &o, const leaf<indexrange<T,3>,3>& root) 
 {
   using namespace std;
 
@@ -598,13 +618,67 @@ public:
 };
 
 
+template<size_t N>
+struct OctreeCoordinates {
+private:
+  std::vector<std::bitset<N>> c;
+public:
+  const std::vector<std::bitset<N>>& getCoords() const { return c; }
+  void addCoord(std::bitset<N> x) { c.push_back(x); }
+
+  template<typename T_, size_t N_>
+    friend OctreeCoordinates<N_> leaf_to_coordinates(const leaf<indexrange<T_,N_>,N_>& L);
+
+  template<size_t N_>
+  friend std::ostream& operator <<(std::ostream &o, const OctreeCoordinates<N_>& C);
+
+  /* TODO: is this mixed little-big-endian? */ 
+  template<typename T>
+    T toatomic() {
+      T C = T(0);
+      size_t acc = 0;
+      for(auto it = c.end(); it-- != c.begin();) {
+        for(int n = 0; n<N; n++) {
+          C += (*it)[n]*(T(1)<<(acc++));
+        }
+      }
+      return C;
+    }
+};
+
+
+
+template<size_t N>
+std::ostream& operator <<(std::ostream &o, const OctreeCoordinates<N>& C){
+ for(auto it = C.c.end(); it-- != C.c.begin(); ) o << (*it);
+ return o;
+}
+
+template<typename T, size_t N>
+OctreeCoordinates<N> leaf_to_coordinates(const leaf<indexrange<T,N>,N>& L)
+{
+  using namespace std;
+  OctreeCoordinates<N> oc;
+  auto* acc = &L;
+  while(acc->parent != NULL) {
+    oc.c.push_back(static_cast<bitset<N>>(acc->coordinate));
+    acc = acc->parent;
+  }
+  return oc;
+}
+
 template<typename T, typename L, size_t core_rank, size_t N>
 struct Tucker {
 private:
   TensorView<T,L,N>& view;
   std::unique_ptr<TensorView<T,L,N>> view_ptr; /* Can this be unique_ptr? */
   T scale;
+  OctreeCoordinates<N> coordinates;
 public:
+
+  void setCoordinates(OctreeCoordinates<N> coordinates) {
+    this-> coordinates=coordinates;
+  };
 
   /* Unclean */
   Eigen::Tensor<T, N> core;
@@ -755,18 +829,20 @@ private:
   vecT serialized;
   size_t size_cores;
 
+  indexrange<L, N> root_range;
+
 public:
 
   const size_t& getCoreSizes() { return this->size_cores; }
   const vecT& getSerialized() { return this->serialized; }
 
   template<size_t N_ = N, std::enable_if_t<N_==3,int> = 0>
-  SerialTucker(std::vector<uptr>& tuckers) {
+  SerialTucker(std::vector<uptr>& tuckers, indexrange<L,N> root_range) : root_range(root_range) {
     using namespace std;
     /* auto this = this; */
 
     size_t core_size = 1;
-    vector<size_t>& factor_lengths = this->factor_lengths;
+    vector<size_t>& factor_lengths = this->factor_lengths; // Calculte factors lenghts from leaf coordinates
     vector<size_t> factor_inds;
     size_t total_factorlengths = 0;
     this->core_dims = {core_rank, core_rank, core_rank};
@@ -875,65 +951,6 @@ std::ostream& operator <<(std::ostream &o, const SerialTucker<T_, L_, core_rank_
   return o;
 }
 
-
-// TODO: deprecated
-template<typename T, typename L, size_t core_rank, size_t N>
-std::unique_ptr<SerialTucker<T,L,core_rank, N>> serialize_tuckers(std::vector<std::unique_ptr<Tucker<T,L,core_rank, N>>> &tuckers) {
-
-  using namespace std;
-
-  unique_ptr<SerialTucker<T,L,core_rank,N>> S(new SerialTucker<T,L,core_rank,N>());
-
-  S->core_dims = {core_rank, core_rank, core_rank};
-
-  size_t core_size = 1;
-  vector<size_t>& factor_lengths = S->factor_lengths;
-  vector<size_t> factor_inds;
-  size_t total_factorlengths = 0;
-
-  for (auto x : S->core_dims) core_size *= x;
-
-  factor_inds.push_back(1);
-  for (auto &tuck : tuckers) {
-
-    size_t acc = 0;
-    for (int n = 0; n < N; n++) acc += tuck->factors[n].size();
-    total_factorlengths += acc;
-
-    factor_lengths.push_back(acc);
-    factor_inds.push_back(factor_inds.back() + acc);
-  }
-
-  size_t ser_len = tuckers.size()*core_size + total_factorlengths;
-
-  vector<T> &serialized = S->serialized;
-  serialized.resize(ser_len);
-
-  size_t acc = 0;
-  size_t bias; 
-  for (auto &tuck : tuckers) {
-    bias = core_size*acc;
-    for (size_t k = 0; k<core_size; ++k) {
-      serialized[bias + k] = tuck->core.data()[k];
-    }
-    ++acc;
-  }
-
-  bias = core_size*tuckers.size();
-  S->size_cores = bias;
-  acc = 0;
-  for (auto &tuck : tuckers) {
-    for(int n=0; n<N; ++n) {
-      for(int m=0;m<tuck->factors[n].size(); ++m) {
-        serialized[bias+acc] = tuck->factors[n].data()[m];
-        ++acc;
-      }
-    }
-  }
-
-  return S;
-}
-
 }
 
 extern "C" {
@@ -954,7 +971,7 @@ extern "C" {
 
     auto view = TensorView<VDF_REAL_DTYPE, UI, 3>(datatensor, K);
 
-    auto tree = leaf<indexrange<UI, 3>>();
+    auto tree = leaf<indexrange<UI, 3>,3>();
     tree.data = K;
 
     auto res0 = view.get_residual();
@@ -974,7 +991,7 @@ extern "C" {
       VDF_REAL_DTYPE residual = -1.0;
 
       // find worst leaf
-      leaf<indexrange<UI,3>>* worst_leaf;
+      leaf<indexrange<UI,3>,3>* worst_leaf;
       for (auto it = tree.begin(); it != tree.end(); ++it) {
         auto& leaf = (*it);
         auto c_view = TensorView<VDF_REAL_DTYPE, UI, 3>(datatensor, leaf.data);
@@ -989,7 +1006,7 @@ extern "C" {
       relres = residual/res0;
 
       /* cout << "tol: " << tolerance << " worst leaf: " << worst_leaf->level << " : "<<  worst_leaf->data << " residual: " << relres << endl; */
-      divide(*worst_leaf);
+      divide_leaf(*worst_leaf);
 
       std::unique_ptr<TensorView<VDF_REAL_DTYPE,UI,3>> c_view(new TensorView<VDF_REAL_DTYPE,UI,3>(datatensor, worst_leaf->data));
       std::unique_ptr<Tucker<VDF_REAL_DTYPE, UI, 2, 3>> tuck(new Tucker<VDF_REAL_DTYPE,UI,2,3>(std::move(c_view))); /* TODO: save tucker to leaf! */
