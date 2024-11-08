@@ -144,7 +144,7 @@ namespace octree_test {
       std::vector<unique_ptr<Tucker<double,UI,2,3>>> tuckers;
 
       for(int iter=0; iter<maxiter; iter++) {
-        cout << "iter: " << iter << " sqnorm of view " << view.sqnorm() << "\t\t|\t";
+        cout << "iter: " << iter << " sqnorm of view " << view.sqnorm() << "\t\t|  ";
 
         double residual = -1.0;
 
@@ -168,9 +168,8 @@ namespace octree_test {
         std::unique_ptr<Tucker<double, UI, 2, 3>> tuck(new Tucker<double,UI,2,3>(std::move(c_view))); /* TODO: save tucker to leaf! */
         tuck->fill_residual();
 
-        /* OctreeCoordinates<indexrange<UI,3>,3> */ 
         OctreeCoordinates<3> worst_coords = leaf_to_coordinates(*worst_leaf);
-        cout << "\t|\tworst_coords: " << worst_coords <<":"<<worst_coords.toatomic<int>()<< " and indices: " << K.getsubrange(worst_coords) << endl;
+        cout << "\t|  worst_coords: " << worst_coords <<":"<<worst_coords.toAtomic<int>()<< ":" << OctreeCoordinates<3>(worst_coords.toAtomic<int>(), worst_leaf->level) << " inds: " << K.getsubrange(worst_coords) << endl;
 
 
         tuck->setCoordinates(worst_coords);

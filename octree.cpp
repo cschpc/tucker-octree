@@ -120,14 +120,20 @@ public:
   indexrange<T, N> divide(uint8_t subcube) {
     indexrange<T, N> D(this->a, this->b);
     T two(2);
-    T one(1); // TODO: calculate correct remainder, if T is a floatingh point type, one should be 0!
+    T one(1); // TODO: calculate correct remainder, if T is a floating point type, one should be 0!
     for(uint8_t dim=0; dim < 3; dim++) {
-      if (subcube & (1 << dim)) {
-        D.a[dim] = this->a[dim] + (this->b[dim]-this->a[dim])/two + one;
-        D.b[dim] = this->b[dim];
+
+      if (this->size(dim) > 3) { // TODO: 3 is magic number related to core_size
+        if (subcube & (1 << dim)) { 
+          D.a[dim] = this->a[dim] + (this->b[dim]-this->a[dim])/two + one;
+          D.b[dim] = this->b[dim];
+        } else {
+          D.a[dim] = this->a[dim];
+          D.b[dim] = this->a[dim] + (this->b[dim]-this->a[dim])/two;
+        }
       } else {
         D.a[dim] = this->a[dim];
-        D.b[dim] = this->a[dim] + (this->b[dim]-this->a[dim])/two;
+        D.b[dim] = this->b[dim];
       }
     }
     D.setJk();
@@ -623,34 +629,56 @@ struct OctreeCoordinates {
 private:
   std::vector<std::bitset<N>> c;
 public:
+
+  OctreeCoordinates() {};
+
+  template<typename T>
+    OctreeCoordinates(T x, size_t level) {
+
+      T mask = 0;
+      for (int n = 0; n < N; n++) mask += T(1)<<n;
+
+      for (int n = 0; n < level; n++) {
+        c.push_back(mask & (x >> n*N));
+      }
+    }
+
   const std::vector<std::bitset<N>>& getCoords() const { return c; }
   void addCoord(std::bitset<N> x) { c.push_back(x); }
 
   template<typename T_, size_t N_>
     friend OctreeCoordinates<N_> leaf_to_coordinates(const leaf<indexrange<T_,N_>,N_>& L);
 
+
   template<size_t N_>
   friend std::ostream& operator <<(std::ostream &o, const OctreeCoordinates<N_>& C);
 
-  /* TODO: is this mixed little-big-endian? */ 
   template<typename T>
-    T toatomic() {
+    T toAtomic() {
       T C = T(0);
       size_t acc = 0;
-      for(auto it = c.end(); it-- != c.begin();) {
-        for(int n = 0; n<N; n++) {
-          C += (*it)[n]*(T(1)<<(acc++));
+      for(auto it : c) {
+        for(int n=0; n<N; n++) {
+          C += it[n]*(T(1)<<(acc++));
         }
       }
       return C;
     }
-};
 
+  template<typename T>
+    void fromAtomic(T x, size_t level) {
+      const T mask = 0b111;
+      c.clear();
+      for (int n=0; n<level; n++) {
+        
+      }
+    }
+};
 
 
 template<size_t N>
 std::ostream& operator <<(std::ostream &o, const OctreeCoordinates<N>& C){
- for(auto it = C.c.end(); it-- != C.c.begin(); ) o << (*it);
+ for(auto it = C.c.end(); it-- != C.c.begin(); ) o << (*it) << " ";
  return o;
 }
 

@@ -247,10 +247,11 @@ public:
         m_fac(ArnoldiOpType(op, Bop), m_ncv),
         m_info(CompInfo::NotComputed)
     {
-        if (nev < 1 || nev > m_n - 1)
+        /* if (nev < 1 || nev > m_n - 1) */
+        if (nev < 1 || nev > m_n )
             throw std::invalid_argument("nev must satisfy 1 <= nev <= n - 1, n is the size of matrix");
 
-        if (ncv <= nev || ncv > m_n)
+        if (ncv < nev || ncv > m_n)
             throw std::invalid_argument("ncv must satisfy nev < ncv <= n, n is the size of matrix");
     }
 
