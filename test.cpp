@@ -145,7 +145,6 @@ namespace octree_test {
 
       for(int iter=0; iter<maxiter; iter++) {
         cout << "iter: " << iter << " sqnorm of view " << view.sqnorm() << "\t\t|  ";
-
         double residual = -1.0;
 
         // find worst leaf
@@ -169,7 +168,10 @@ namespace octree_test {
         tuck->fill_residual();
 
         OctreeCoordinates<3> worst_coords = leaf_to_coordinates(*worst_leaf);
-        cout << "\t|  worst_coords: " << worst_coords <<":"<<worst_coords.toAtomic<int>()<< ":" << OctreeCoordinates<3>(worst_coords.toAtomic<int>(), worst_leaf->level) << " inds: " << K.getsubrange(worst_coords) << endl;
+        uint32_t atomic_coords = worst_coords.template toAtomic<uint32_t>();
+        cout << "\t|  worst_coords: " << worst_coords <<":"<<atomic_coords<< ":" 
+          << OctreeCoordinates<3>(worst_coords.template toAtomic<uint32_t>(), worst_leaf->level) 
+          << " inds: " << K.getsubrange(worst_coords) << endl;
 
 
         tuck->setCoordinates(worst_coords);
@@ -187,7 +189,7 @@ namespace octree_test {
         tuck.fill_residual(double(1), double(1));
       }
 
-      auto serialized = SerialTucker<double, UI, 2, 3>(tuckers, K);
+      auto serialized = SerialTucker<double, UI, 2, 3, uint32_t>(tuckers, K);
 
       size_t acc = 1;
       size_t counter = 1;
@@ -199,7 +201,7 @@ namespace octree_test {
       }
 
       /* auto detuckers = */ 
-        /* serialized.Deserialize(); */
+        serialized.Deserialize();
 
       cout << "reconstructed residual sqnorm: " << view.sqnorm() << std::endl;
       for (int i1 = 0; i1<view.size(0); i1++) {

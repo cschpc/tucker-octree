@@ -628,12 +628,13 @@ template<size_t N>
 struct OctreeCoordinates {
 private:
   std::vector<std::bitset<N>> c;
+  uint8_t level;
 public:
 
   OctreeCoordinates() {};
 
   template<typename T>
-    OctreeCoordinates(T x, size_t level) {
+    OctreeCoordinates(T x, size_t level) : level(level){
 
       T mask = 0;
       for (int n = 0; n < N; n++) mask += T(1)<<n;
@@ -646,6 +647,8 @@ public:
   const std::vector<std::bitset<N>>& getCoords() const { return c; }
   void addCoord(std::bitset<N> x) { c.push_back(x); }
 
+  uint8_t getLevel() const {return this->level;}
+
   template<typename T_, size_t N_>
     friend OctreeCoordinates<N_> leaf_to_coordinates(const leaf<indexrange<T_,N_>,N_>& L);
 
@@ -654,7 +657,7 @@ public:
   friend std::ostream& operator <<(std::ostream &o, const OctreeCoordinates<N_>& C);
 
   template<typename T>
-    T toAtomic() {
+    T toAtomic() const {
       T C = T(0);
       size_t acc = 0;
       for(auto it : c) {
@@ -670,9 +673,19 @@ public:
       const T mask = 0b111;
       c.clear();
       for (int n=0; n<level; n++) {
-        
+        assertm(false, "not implemented");
       }
     }
+
+  template<typename T>
+  indexrange<T,N> toIndexRange(indexrange<T,N> root) {
+    auto acc = root;
+    for (auto& it : this->c) {
+      uint8_t subcube = T(0);
+      for(int n=0; n<N; n++) subcube+=it[n]*(T(1)<<n);
+      acc = acc.divide(subcube);
+    }
+  }
 };
 
 
@@ -692,14 +705,15 @@ OctreeCoordinates<N> leaf_to_coordinates(const leaf<indexrange<T,N>,N>& L)
     oc.c.push_back(static_cast<bitset<N>>(acc->coordinate));
     acc = acc->parent;
   }
+  oc.level = L.level;
   return oc;
 }
 
 template<typename T, typename L, size_t core_rank, size_t N>
 struct Tucker {
 private:
-  TensorView<T,L,N>& view;
-  std::unique_ptr<TensorView<T,L,N>> view_ptr; /* Can this be unique_ptr? */
+  /* TensorView<T,L,N>& view; */
+  std::unique_ptr<TensorView<T,L,N>> view_ptr; // TODO: move view_ptr out of class and give it as reference in various places
   T scale;
   OctreeCoordinates<N> coordinates;
 public:
@@ -708,6 +722,8 @@ public:
     this-> coordinates=coordinates;
   };
 
+  const OctreeCoordinates<N>& getCoordinates() const {return this->coordinates;}
+
   /* Unclean */
   Eigen::Tensor<T, N> core;
   std::array<Eigen::Matrix<T, Eigen::Dynamic,core_rank>, N> factors;
@@ -715,13 +731,16 @@ public:
 
   T getScale() const { return this->scale; }
 
-  Tucker(Eigen::Tensor<T,N> core, std::array<Eigen::Matrix<T, Eigen::Dynamic, core_rank>, N> factors) : core(core), factors(factors) {}
+  Tucker(Eigen::Tensor<T,N> core, 
+         std::array<Eigen::Matrix<T, Eigen::Dynamic, core_rank>, N> factors, 
+         OctreeCoordinates<N> coordinates) : 
+    core(core), factors(factors), coordinates(coordinates) {}
 
-  Tucker(std::unique_ptr<TensorView<T,L,N>> view_ptr) : view(*view_ptr), view_ptr(std::move(view_ptr)) { 
+  Tucker(std::unique_ptr<TensorView<T,L,N>> view_ptr) : view_ptr(std::move(view_ptr)) { 
     this->init(); 
   }
 
-  Tucker(TensorView<T,L,N>& view) : view(view), view_ptr(&view) {
+  Tucker(TensorView<T,L,N>& view) : view_ptr(&view) {
     this->init();
   }
 
@@ -730,6 +749,7 @@ public:
   void make_core() {
     this->core.resize(core_rank, core_rank, core_rank);
 
+  TensorView<T,L,N>& view = *(this->view_ptr);
     for(size_t j1 = 0; j1<core_rank; j1++) {
       for(size_t j2 = 0; j2<core_rank; j2++) {
         for(size_t j3 = 0; j3<core_rank; j3++) {
@@ -740,12 +760,12 @@ public:
     for(size_t j2 = 0; j2<core_rank; j2++)
     for(size_t j3 = 0; j3<core_rank; j3++)
       {
-      for(size_t i1 = 0; i1<this->view.size(0); i1++) // TODO: correct ranges
-      for(size_t i2 = 0; i2<this->view.size(1); i2++)
-      for(size_t i3 = 0; i3<this->view.size(2); i3++)
+      for(size_t i1 = 0; i1<view.size(0); i1++) // TODO: correct ranges
+      for(size_t i2 = 0; i2<view.size(1); i2++)
+      for(size_t i3 = 0; i3<view.size(2); i3++)
         {
         this->core(j1,j2,j3) = this->core(j1,j2,j3) + 
-          (this->view(i1,i2,i3))*
+          (view(i1,i2,i3))*
           (this->factors[0](i1,j1))*
           (this->factors[1](i2,j2))*
           (this->factors[2](i3,j3));
@@ -764,6 +784,8 @@ public:
   template<size_t N_ = N, std::enable_if_t<N_==3,int> = 0>
   void fill_residual(const VDF_REAL_DTYPE mult_orig, const VDF_REAL_DTYPE mult_corr) {
 
+  TensorView<T,L,N>& view = *(this->view_ptr);
+
     for(size_t i1 = 0; i1 < view.size(0); i1++)
     for(size_t i2 = 0; i2 < view.size(1); i2++)
     for(size_t i3 = 0; i3 < view.size(2); i3++) {
@@ -777,27 +799,27 @@ public:
           this->factors[1](i2,j2)*
           this->factors[2](i3,j3);
       }
-    this->view(i1,i2,i3) = mult_orig*this->view(i1,i2,i3) + mult_corr*acc;
+    view(i1,i2,i3) = mult_orig*view(i1,i2,i3) + mult_corr*acc;
     }
   }
 
 private: 
   void init() {
-    auto view = this->view;
+    auto& view = *(this->view_ptr);
 
     /* TODO: Spectra might struggle finding eigenspaces of big linear ops (300x300 is too big?!)*/
     using namespace Spectra;
     using namespace Eigen;
 
     for (int m=0;m<N; m++) {
-      this->factors[m].resize(this->view.size(m),core_rank);
+      this->factors[m].resize(view.size(m),core_rank);
     }
 
     /* TODO: too smart scaling, die gracefully if res < epsilon */
     auto res = MAX(VDF_REAL_DTYPE(1e-16), view.get_residual());
     this->scale = 1/res;
 
-    NormalFoldProd<T, L, N> op(this->view, this->scale);
+    NormalFoldProd<T, L, N> op(view, this->scale);
 
     for (size_t mode=0; mode<N; mode++) {
       op.setMode(mode);
@@ -844,7 +866,7 @@ private:
 /* void compress_with_octree(double* input_buffer, size_t Nx, ..., char* compressed); */
 /* void uncompress_with_octree(double* output_buffer, char* compressed); */
 
-template<typename T, typename L, size_t core_rank, size_t N>
+template<typename T, typename L, size_t core_rank, size_t N, typename atomic_coord_type>
 struct SerialTucker {
 
 private:
@@ -852,16 +874,17 @@ private:
   using vecS = std::vector<size_t>;
   using uptr = std::unique_ptr<Tucker<T,L,core_rank,N>>;
 
-  std::array<uint8_t,N> core_dims;
-  vecS factor_lengths;
   vecT serialized;
-  size_t size_cores;
+  size_t n_leaves;
+  std::vector<atomic_coord_type> leaf_coordinates;
+  std::vector<uint8_t> leaf_levels;
+  size_t core_size;
 
   indexrange<L, N> root_range;
 
 public:
 
-  const size_t& getCoreSizes() { return this->size_cores; }
+  const size_t& getCoreSizes() { return this->core_size; }
   const vecT& getSerialized() { return this->serialized; }
 
   template<size_t N_ = N, std::enable_if_t<N_==3,int> = 0>
@@ -869,23 +892,25 @@ public:
     using namespace std;
     /* auto this = this; */
 
-    size_t core_size = 1;
-    vector<size_t>& factor_lengths = this->factor_lengths; // Calculte factors lenghts from leaf coordinates
-    vector<size_t> factor_inds;
+    const size_t core_size = pow(core_rank,N);
+    /* vector<size_t>& factor_lengths = this->factor_lengths; // Calculate factors lengths from leaf coordinates */
+
     size_t total_factorlengths = 0;
-    this->core_dims = {core_rank, core_rank, core_rank};
 
-    for (auto x : this->core_dims) core_size *= x;
+    this->core_size = core_size;
 
-    factor_inds.push_back(1);
     for (auto &tuck : tuckers) {
 
-      size_t acc = 0;
-      for (int n = 0; n < N; n++) acc += tuck->factors[n].size();
-      total_factorlengths += acc;
+      auto inds = this->root_range.getsubrange(tuck->getCoordinates());
 
-      factor_lengths.push_back(acc);
-      factor_inds.push_back(factor_inds.back() + acc);
+      for (int dim = 0; dim < N; dim++){
+        total_factorlengths += inds.size(dim)*core_rank;
+      }
+      const OctreeCoordinates<N>& coords = tuck->getCoordinates();
+
+      atomic_coord_type atomic_coords = coords.template toAtomic<atomic_coord_type>();
+      this->leaf_coordinates.push_back(atomic_coords);
+      this->leaf_levels.push_back(coords.getLevel());
     }
 
     size_t ser_len = tuckers.size()*core_size + total_factorlengths;
@@ -904,7 +929,7 @@ public:
     }
 
     bias = core_size*tuckers.size();
-    this->size_cores = bias;
+    this->core_size = bias;
     acc = 0;
     for (auto &tuck : tuckers) {
       for(int n=0; n<N; ++n) {
@@ -917,15 +942,16 @@ public:
   }
 
   template<size_t N_ = N, std::enable_if_t<N_==3,int> = 0>
-  /* std::vector<uptr> */ 
   void Deserialize() {
     using namespace Eigen;
     using namespace std;
 
     const size_t n_per_core = pow(core_rank,N);
-    size_t n_leaves = this->size_cores / n_per_core;
+    size_t n_leaves = this->core_size / n_per_core;
     std::vector<TensorMap<Tensor<T, N>>> cores;
-    std::vector<std::array<Matrix<T, Dynamic, N>,N>> factorss;
+    std::vector<std::array<Matrix<T, Dynamic, core_rank>,N>> factorss;
+    std::vector<OctreeCoordinates<N>> coordss;
+    std::vector<unique_ptr<Tucker<T,L,core_rank,N>>> tuckers;
 
     std::cout << "n_leaves: " << n_leaves << endl;
     std::cout << "n_per_core: " << n_per_core << endl;
@@ -936,35 +962,52 @@ public:
     }
     
     size_t bias = n_leaves*n_per_core;
-    size_t acc = 0;
+
     for (int m = 0; m < n_leaves; ++m) {
       T* data = this->serialized.data()+bias;
-      const std::array<size_t,3> FL = {this->factor_lengths[acc++], this->factor_lengths[acc++], this->factor_lengths[acc++]};
+
+      auto coords = this->leaf_coordinates[m];
+
+      auto o_coords = OctreeCoordinates<N>(coords, this->leaf_levels[m]);
+      coordss.push_back(o_coords);
+
+      indexrange<L, N> leaf_inds = this->root_range.getsubrange(o_coords);
+
+      const std::array<size_t,3> FL = {
+        leaf_inds.size(0),
+        leaf_inds.size(1),
+        leaf_inds.size(2)};
+
       for (auto& it : FL) cout << "FL: " << it << endl;
 
       factorss.push_back({
-                         Map<Matrix<T, Dynamic, N>>(data+m*FL[0], FL[0]/N, N),
-                         Map<Matrix<T, Dynamic, N>>(data+m*FL[1], FL[1]/N, N),
-                         Map<Matrix<T, Dynamic, N>>(data+m*FL[2], FL[2]/N, N)
-                         });
-      bias += FL[0] + FL[1] + FL[2];
+                         Map<Matrix<T, Dynamic, core_rank>>(data                   , FL[0], core_rank),
+                         Map<Matrix<T, Dynamic, core_rank>>(data + FL[0]*core_rank         , FL[1], core_rank),
+                         Map<Matrix<T, Dynamic, core_rank>>(data + (FL[1]+FL[0])*core_rank , FL[2], core_rank)});
+      bias += (FL[0] + FL[1] + FL[2])*core_rank;
+    }
+
+    for (int m = 0; m < n_leaves; ++m) {
+      tuckers.push_back(unique_ptr<Tucker<T,L,core_rank,N>>(new Tucker<T,L,core_rank,N>(cores[m], factorss[m], coordss[m])));
     }
 
     int m = 0;
-    for (auto& it : factorss)
-      {
+    for (auto& it : factorss) {
       cout << "leaf: " << ++m << endl;
-      cout << it[1] << endl;
+      for (int n = 0; n<3; n++){
+        cout << "\tfactor: "<< n << endl;
+        cout << it[n] << endl;
       }
+    }
 
   }
   
-  template<typename T_, typename L_, size_t core_rank_, size_t N_>
-    friend std::ostream& operator <<(std::ostream &o, const SerialTucker<T_, L_, core_rank_, N_>& R);
+  template<typename T_, typename L_, size_t core_rank_, size_t N_, typename atomic_coord_type_>
+    friend std::ostream& operator <<(std::ostream &o, const SerialTucker<T_, L_, core_rank_, N_, atomic_coord_type_>& R);
 };
 
-template<typename T_, typename L_, size_t core_rank_, size_t N_>
-std::ostream& operator <<(std::ostream &o, const SerialTucker<T_, L_, core_rank_, N_>& R) {
+template<typename T_, typename L_, size_t core_rank_, size_t N_, typename atomic_coord_type_>
+std::ostream& operator <<(std::ostream &o, const SerialTucker<T_, L_, core_rank_, N_, atomic_coord_type_>& R) {
 
   using namespace std;
   string corefactor = "C";
@@ -972,7 +1015,7 @@ std::ostream& operator <<(std::ostream &o, const SerialTucker<T_, L_, core_rank_
   size_t acc = 1;
   for (auto& it : R.serialized) {
     o << corefactor << ", " << acc<< ", " << it << endl;
-    if (acc++ == R.size_cores) {
+    if (acc++ == R.core_size) {
       corefactor = "F";
     }
   }
