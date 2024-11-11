@@ -4,19 +4,26 @@ PROJECT(VDF_OCTREE CXX C)
 
 set(Eigen3_DIR "/home/jkataja/opt/eigen/vlasiator-3.22.1/share/eigen3/cmake" CACHE PATH "")
 set(hip_cpu_rt_DIR "/home/jkataja/opt/hipcpu/share/hip_cpu_rt/cmake" CACHE PATH "")
-option(CMAKE_EXPORT_COMPILE_COMMANDS "export compile_commands.json" ON)
+set(zfp_DIR "/home/jkataja/opt/zfp/1.0.1/lib/cmake/zfp" CACHE PATH "")
+
+
+# 
+set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE CACHE BOOL "" FORCE)
+# option(CMAKE_EXPORT_COMPILE_COMMANDS "export compile_commands.json" ON)
 
 set(CMAKE_BUILD_TYPE "RelWIthDebInfo" CACHE STRING "")
 
 find_package(Eigen3 3.3 REQUIRED NO_MODULE)
+find_package(zfp REQUIRED)
 
 option(WITH_HIP "Use HIP" OFF)
 
 add_library(octree_compressor octree.cpp)
 ADD_EXECUTABLE(octree test.cpp)
 
-target_link_libraries (octree_compressor Eigen3::Eigen)
+target_link_libraries (octree_compressor Eigen3::Eigen zfp)
 target_link_libraries (octree Eigen3::Eigen octree_compressor)
+target_link_libraries (octree)
 
 set_property(TARGET octree PROPERTY CXX_STANDARD 17)
 set_property(TARGET octree_compressor PROPERTY CXX_STANDARD 17)

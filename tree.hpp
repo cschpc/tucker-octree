@@ -33,6 +33,7 @@ public:
     }
   }
 
+  /* Iterate over leaves with for(auto&& leaf : tree) */ 
   class LeafIterator;
   LeafIterator begin() { return LeafIterator(this); }
   LeafIterator end() { return LeafIterator(nullptr); }
@@ -53,9 +54,9 @@ public:
   leaf<T,N>& operator*() { return *(this->curr); }
 
   // prefix increment
-  leaf<T,N>* operator++ () {
+  leaf<T,N>& operator++ () {
     moveToNextValid();
-    return this->stack.top();
+    return *(this->stack.top());
   }
 
   bool operator==(const LeafIterator& R) {

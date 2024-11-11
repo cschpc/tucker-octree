@@ -117,26 +117,25 @@ namespace octree_test {
   }
 
   template<typename UI>
-    void test_tree(size_t maxiter, UI big_N) {
+    void test_tree(size_t maxiter, UI Nx, UI Ny, UI Nz) {
       using namespace Eigen;
       using namespace std;
-      auto datatensor = Tensor<double, 3, ColMajor>(big_N,big_N,big_N);
-      indexrange<UI, 3> K({0,0,0},{UI(big_N-1),UI(big_N-1),UI(big_N-1)});
+      auto datatensor = Tensor<double, 3, ColMajor>(Nx,Ny,Nz);
+      indexrange<UI, 3> K({0,0,0},{UI(Nx-1),UI(Ny-1),UI(Nz-1)});
 
-      indexrange<UI,3> window({0,0,big_N/2},{UI(big_N-1),UI(big_N-1),UI(big_N/2)});
 
       auto tree = leaf<indexrange<UI,3>,3>();
       tree.data = K;
 
       /* divide_leaf(tree); */
-
+      UI big_N = MAX(Nx, MAX(Ny,Nz));
       auto f = [&](int I) {return M_PIf64*(I+1)/big_N;};
       auto F = [&](int I1, int I2, int I3) {return exp(-pow((I1+I2+I3)/(0.1*big_N),2))*sin(M_PIf64*(I1+I2+I3+1)/(2*big_N));};
 
       auto view = TensorView<double,UI,3>(datatensor, K);
       for (int i1 = 0; i1<view.size(0); i1++) {
-        for (int i2 = 0; i2<view.size(0); i2++) {
-          for (int i3 = 0; i3<view.size(0); i3++) {
+        for (int i2 = 0; i2<view.size(1); i2++) {
+          for (int i3 = 0; i3<view.size(2); i3++) {
             view(i1,i2,i3) = F(i1,i2,i3);
           }}}
 
@@ -149,8 +148,7 @@ namespace octree_test {
 
         // find worst leaf
         leaf<indexrange<UI,3>,3>* worst_leaf;
-        for (auto it = tree.begin(); it != tree.end(); ++it) {
-          auto& leaf = (*it);
+        for (auto&& leaf : tree) {
           auto c_view = TensorView<double, UI, 3>(datatensor, leaf.data);
           double c_residual = c_view.get_residual();
           if (c_residual > residual) {
@@ -201,15 +199,21 @@ namespace octree_test {
       }
 
       /* auto detuckers = */ 
-        serialized.Deserialize();
+      auto detuckers = serialized.Deserialize();
 
-      cout << "reconstructed residual sqnorm: " << view.sqnorm() << std::endl;
+      view.fill(double(0));
+
+      for (auto&& tuck : detuckers) {
+        tuck->fill_residual(view, double(1), double(1));
+      }
+
+      cout << "reconstructed sqnorm: " << view.sqnorm() << std::endl;
       for (int i1 = 0; i1<view.size(0); i1++) {
-        for (int i2 = 0; i2<view.size(0); i2++) {
-          for (int i3 = 0; i3<view.size(0); i3++) {
+        for (int i2 = 0; i2<view.size(1); i2++) {
+          for (int i3 = 0; i3<view.size(2); i3++) {
             view(i1,i2,i3) = view(i1,i2,i3) - F(i1,i2,i3);
           }}}
-      cout << "final reconstructed sqnorm: " << view.sqnorm() << std::endl;
+      cout << "final reconstruction error sqnorm: " << view.sqnorm() << std::endl;
 
     }
 
@@ -265,7 +269,7 @@ int main(int argc, const char** argv) {
     bool &help = flag("h,help", "help");
     vector<int> &tucker = kwarg("t,tucker", "Test tucker functionality with given tensor size.").set_default("-1");
     vector<uint16_t> &normaltest = kwarg("n,normalsizes", "Size of normal-vector product tensor").set_default("0,0,0");
-    vector<size_t> &treetest = kwarg("T,tree", "Test octree + tucker. Param: maxiter, big_N ").set_default("0,4");
+    vector<size_t> &treetest = kwarg("T,tree", "Test octree + tucker. Param: maxiter, Nx,Ny,Nz ").set_default("0,4,4,4");
     string& outfile = kwarg("o,outfile", "Output structured data to this file.").set_default("");
   };
 
@@ -290,6 +294,6 @@ int main(int argc, const char** argv) {
   if (tuckersize[0] > 0) test_tucker(tuckersize[0]);
 
   cout << "\ntesting tree next\n";
-  if (treeparam[0] > 0) test_tree(treeparam[0], treeparam[1]);
+  if (treeparam[0] > 0) test_tree(treeparam[0], treeparam[1], treeparam[2], treeparam[3]);
 
 }

@@ -11,6 +11,7 @@
 #include <unsupported/Eigen/CXX11/Tensor>
 #include <Spectra/SymEigsSolver.h>
 #include <Spectra/GenEigsSolver.h>
+#include <zfp.hpp>
 
 #include <chrono>
 
@@ -239,9 +240,12 @@ public:
   TensorView(Eigen::Tensor<T,N,Eigen::ColMajor> &datatensor) : datatensor(datatensor) {};
   TensorView(Eigen::Tensor<T,N,Eigen::ColMajor> &datatensor, indexrange<L, N> I) : datatensor(datatensor),  I(I) {};
 
+  void setIndexrange(indexrange<L,N> I) { this->I = I;}
+
+  indexrange<L,N>& getIndexrange() { return this->I; }
+
   // TODO: iterator over elements so we wouldn't need always do std::enable_if_t
-
-
+  
   template<size_t N_ = N, std::enable_if_t<N_==3,int> = 0, typename... Ts>
     void fill(T x) {
       for (size_t i3 = 0; i3 < this->size(2); i3++) 
@@ -627,9 +631,10 @@ public:
 template<size_t N>
 struct OctreeCoordinates {
 private:
-  std::vector<std::bitset<N>> c;
+  std::vector<std::bitset<N>> c = {};
   uint8_t level;
 public:
+
 
   OctreeCoordinates() {};
 
@@ -645,13 +650,15 @@ public:
     }
 
   const std::vector<std::bitset<N>>& getCoords() const { return c; }
+
   void addCoord(std::bitset<N> x) { c.push_back(x); }
+
+  bool empty() { return this->c.size() == 0; }
 
   uint8_t getLevel() const {return this->level;}
 
   template<typename T_, size_t N_>
     friend OctreeCoordinates<N_> leaf_to_coordinates(const leaf<indexrange<T_,N_>,N_>& L);
-
 
   template<size_t N_>
   friend std::ostream& operator <<(std::ostream &o, const OctreeCoordinates<N_>& C);
@@ -716,17 +723,20 @@ private:
   std::unique_ptr<TensorView<T,L,N>> view_ptr; // TODO: move view_ptr out of class and give it as reference in various places
   T scale;
   OctreeCoordinates<N> coordinates;
+
+public:
+
+  /* TODO: the main data of Tucker is now in public visibility */
+  Eigen::Tensor<T, N> core;
+  std::array<Eigen::Matrix<T, Eigen::Dynamic,core_rank>, N> factors;
+
 public:
 
   void setCoordinates(OctreeCoordinates<N> coordinates) {
-    this-> coordinates=coordinates;
+    this->coordinates=coordinates;
   };
 
   const OctreeCoordinates<N>& getCoordinates() const {return this->coordinates;}
-
-  /* Unclean */
-  Eigen::Tensor<T, N> core;
-  std::array<Eigen::Matrix<T, Eigen::Dynamic,core_rank>, N> factors;
 
 
   T getScale() const { return this->scale; }
@@ -736,14 +746,13 @@ public:
          OctreeCoordinates<N> coordinates) : 
     core(core), factors(factors), coordinates(coordinates) {}
 
-  Tucker(std::unique_ptr<TensorView<T,L,N>> view_ptr) : view_ptr(std::move(view_ptr)) { 
+  Tucker(std::unique_ptr<TensorView<T,L,N>> view_ptr) : view_ptr(std::move(view_ptr)) {
     this->init(); 
   }
 
   Tucker(TensorView<T,L,N>& view) : view_ptr(&view) {
     this->init();
   }
-
 
   template<size_t N_ = N, std::enable_if_t<N_==3,int> = 0>
   void make_core() {
@@ -778,6 +787,29 @@ public:
   void fill_residual() {
     /* No scaling here, core is computed via projections with factors! */
     this->fill_residual(VDF_REAL_DTYPE(1), VDF_REAL_DTYPE(-1)); 
+  }
+
+  template<size_t N_ = N, std::enable_if_t<N_==3,int> = 0>
+  void fill_residual(TensorView<T,L,N>& main_view, const VDF_REAL_DTYPE mult_orig, const VDF_REAL_DTYPE mult_corr) {
+    auto view = main_view;
+    view.setIndexrange(view.getIndexrange().getsubrange(this->coordinates));
+
+    for(size_t i1 = 0; i1 < view.size(0); i1++)
+    for(size_t i2 = 0; i2 < view.size(1); i2++)
+    for(size_t i3 = 0; i3 < view.size(2); i3++) {
+      T acc = T(0);
+      for(size_t j1 = 0; j1 < core_rank; j1++)
+      for(size_t j2 = 0; j2 < core_rank; j2++)
+      for(size_t j3 = 0; j3 < core_rank; j3++) {
+        acc = acc + 
+          this->core(j1,j2,j3)*
+          this->factors[0](i1,j1)*
+          this->factors[1](i2,j2)*
+          this->factors[2](i3,j3);
+      }
+    view(i1,i2,i3) = mult_orig*view(i1,i2,i3) + mult_corr*acc;
+    }
+
   }
 
   /* Warning! Mutates the view contents! */
@@ -882,6 +914,12 @@ private:
 
   indexrange<L, N> root_range;
 
+  uint8_t** serialized_bytes;
+
+  // TODO: 
+  void make_serialized_bytes() {
+  }
+
 public:
 
   const size_t& getCoreSizes() { return this->core_size; }
@@ -942,7 +980,8 @@ public:
   }
 
   template<size_t N_ = N, std::enable_if_t<N_==3,int> = 0>
-  void Deserialize() {
+  /* void */ 
+  std::vector<std::unique_ptr<Tucker<T,L,core_rank,N>>> Deserialize() {
     using namespace Eigen;
     using namespace std;
 
@@ -953,8 +992,10 @@ public:
     std::vector<OctreeCoordinates<N>> coordss;
     std::vector<unique_ptr<Tucker<T,L,core_rank,N>>> tuckers;
 
+#if VERBOSE_DEBUG
     std::cout << "n_leaves: " << n_leaves << endl;
     std::cout << "n_per_core: " << n_per_core << endl;
+#endif
 
     for (int m = 0; m < n_leaves; ++m) {
       T* data = this->serialized.data();
@@ -978,19 +1019,23 @@ public:
         leaf_inds.size(1),
         leaf_inds.size(2)};
 
+#if VERBOSE_DEBUG
       for (auto& it : FL) cout << "FL: " << it << endl;
+#endif
 
       factorss.push_back({
-                         Map<Matrix<T, Dynamic, core_rank>>(data                   , FL[0], core_rank),
+                         Map<Matrix<T, Dynamic, core_rank>>(data                           , FL[0], core_rank),
                          Map<Matrix<T, Dynamic, core_rank>>(data + FL[0]*core_rank         , FL[1], core_rank),
                          Map<Matrix<T, Dynamic, core_rank>>(data + (FL[1]+FL[0])*core_rank , FL[2], core_rank)});
       bias += (FL[0] + FL[1] + FL[2])*core_rank;
     }
 
+    // TODO: just one loop that does core, factors and coords
     for (int m = 0; m < n_leaves; ++m) {
       tuckers.push_back(unique_ptr<Tucker<T,L,core_rank,N>>(new Tucker<T,L,core_rank,N>(cores[m], factorss[m], coordss[m])));
     }
 
+#if VERBOSE_DEBUG
     int m = 0;
     for (auto& it : factorss) {
       cout << "leaf: " << ++m << endl;
@@ -999,6 +1044,9 @@ public:
         cout << it[n] << endl;
       }
     }
+#endif
+
+    return tuckers;
 
   }
   
@@ -1063,8 +1111,9 @@ extern "C" {
 
       // find worst leaf
       leaf<indexrange<UI,3>,3>* worst_leaf;
-      for (auto it = tree.begin(); it != tree.end(); ++it) {
-        auto& leaf = (*it);
+      /* for (auto it = tree.begin(); it != tree.end(); ++it) { */
+      /* for (auto* it : tree) { */
+      for (auto&& leaf : tree) {
         auto c_view = TensorView<VDF_REAL_DTYPE, UI, 3>(datatensor, leaf.data);
         VDF_REAL_DTYPE c_residual = c_view.get_residual();
         if (c_residual > residual) {
