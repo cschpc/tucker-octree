@@ -11,9 +11,12 @@
 #include <unsupported/Eigen/CXX11/Tensor>
 #include <Spectra/SymEigsSolver.h>
 #include <Spectra/GenEigsSolver.h>
-#include <zfp.hpp>
 
 #include <chrono>
+
+#include <zfp.hpp>
+#include <zfp/constarray1.hpp>
+#include <zfp/array1.hpp>
 
 #include "tree.hpp"
 
@@ -905,6 +908,7 @@ private:
   using vecT = std::vector<T>;
   using vecS = std::vector<size_t>;
   using uptr = std::unique_ptr<Tucker<T,L,core_rank,N>>;
+  using zfp_array = zfp::const_array1<T>;
 
   vecT serialized;
   size_t n_leaves;
@@ -912,12 +916,35 @@ private:
   std::vector<uint8_t> leaf_levels;
   size_t core_size;
 
+  T core_scale = 0;
+  size_t n_core;
+
   indexrange<L, N> root_range;
 
-  uint8_t** serialized_bytes;
+  uchar** serialized_bytes = nullptr;
 
   // TODO: 
   void make_serialized_bytes() {
+    serialized_bytes = (uchar**)malloc(sizeof(uchar*));
+    auto conf = zfp_config_accuracy(1e-8);
+    
+    zfp_array compressed(this->serialized.size(), conf, this->serialized.data());
+    size_t storage_size = compressed.size_bytes();
+    uchar* compressed_data = (uchar*) compressed.compressed_data();
+
+    *serialized_bytes = (uint8_t*)malloc(sizeof(uint8_t)*storage_size);
+
+    std::cout << "storage size: " << storage_size << " vs float data size " << sizeof(T)*this->serialized.size() << std::endl;
+
+    // TODO: this is memcpy but compiler probably knows what to do..
+    for(size_t k=0; k<storage_size; ++k) {
+      (*serialized_bytes)[k] = compressed_data[k];
+    }
+
+  }
+
+  void unmake_serialized_bytes() {
+
   }
 
 public:
@@ -930,14 +957,12 @@ public:
     using namespace std;
     /* auto this = this; */
 
-    const size_t core_size = pow(core_rank,N);
+    const size_t n_per_core = pow(core_rank,N);
     /* vector<size_t>& factor_lengths = this->factor_lengths; // Calculate factors lengths from leaf coordinates */
 
     size_t total_factorlengths = 0;
 
-    this->core_size = core_size;
-
-    for (auto &tuck : tuckers) {
+    for (auto& tuck : tuckers) {
 
       auto inds = this->root_range.getsubrange(tuck->getCoordinates());
 
@@ -951,23 +976,29 @@ public:
       this->leaf_levels.push_back(coords.getLevel());
     }
 
-    size_t ser_len = tuckers.size()*core_size + total_factorlengths;
+    size_t ser_len = tuckers.size()*n_per_core + total_factorlengths;
 
     vector<T> &serialized = this->serialized;
     serialized.resize(ser_len);
 
     size_t acc = 0;
     size_t bias; 
-    for (auto &tuck : tuckers) {
-      bias = core_size*acc;
-      for (size_t k = 0; k<core_size; ++k) {
-        serialized[bias + k] = tuck->core.data()[k];
+    this->core_scale = T(0);
+    for (auto& tuck : tuckers) {
+      bias = n_per_core*acc;
+      for (size_t k = 0; k<n_per_core; ++k) {
+        T x = tuck->core.data()[k];
+        this->core_scale = MAX(this->core_scale, abs(x));
+        serialized[bias + k] = x; //tuck->core.data()[k];
       }
       ++acc;
     }
 
-    bias = core_size*tuckers.size();
-    this->core_size = bias;
+    bias = n_per_core*tuckers.size();
+    /* this->core_size = acc*n_per_core; */
+
+    /* for (size_t k = 0; k < this->core_size; ++k) serialized[k] = serialized[k] / this->core_scale; */
+
     acc = 0;
     for (auto &tuck : tuckers) {
       for(int n=0; n<N; ++n) {
@@ -977,6 +1008,7 @@ public:
         }
       }
     }
+    /* this->make_serialized_bytes(); */
   }
 
   template<size_t N_ = N, std::enable_if_t<N_==3,int> = 0>
@@ -985,8 +1017,8 @@ public:
     using namespace Eigen;
     using namespace std;
 
-    const size_t n_per_core = pow(core_rank,N);
-    size_t n_leaves = this->core_size / n_per_core;
+    const size_t n_per_core = this->core_size;
+    size_t n_leaves = this->core_size / n_per_core; //this->leaf_coordinates.size();
     std::vector<TensorMap<Tensor<T, N>>> cores;
     std::vector<std::array<Matrix<T, Dynamic, core_rank>,N>> factorss;
     std::vector<OctreeCoordinates<N>> coordss;
@@ -996,6 +1028,9 @@ public:
     std::cout << "n_leaves: " << n_leaves << endl;
     std::cout << "n_per_core: " << n_per_core << endl;
 #endif
+
+    /* Rescale back */
+    /* for (size_t k = 0; k < this->core_size; ++k) this->serialized[k] = this->serialized[k] * this->core_scale; */
 
     for (int m = 0; m < n_leaves; ++m) {
       T* data = this->serialized.data();

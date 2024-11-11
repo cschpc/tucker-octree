@@ -21,14 +21,12 @@ option(WITH_HIP "Use HIP" OFF)
 add_library(octree_compressor octree.cpp)
 ADD_EXECUTABLE(octree test.cpp)
 
-target_link_libraries (octree_compressor Eigen3::Eigen zfp)
+target_link_libraries (octree_compressor Eigen3::Eigen zfp::zfp)
 target_link_libraries (octree Eigen3::Eigen octree_compressor)
-target_link_libraries (octree)
 
 set_property(TARGET octree PROPERTY CXX_STANDARD 17)
 set_property(TARGET octree_compressor PROPERTY CXX_STANDARD 17)
 
-SET(CMAKE_BUILD_TYPE RelWIthDebInfo CACHE STRING "")
 
 if(WITH_HIP)
   option(USE_HIP_GPU "Use normal HIP" OFF)
