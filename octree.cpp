@@ -927,8 +927,10 @@ private:
   uchar** zfp_header = nullptr;
   size_t zfp_header_size, zfp_packed_size;
 
+  std::vector<uchar> packed;
 
-std::vector<uchar> compress(float* array, size_t arraySize, size_t& compressedSize) {
+
+std::vector<uchar> compress(T* array, size_t arraySize, size_t& compressedSize) {
    // Allocate memory for compressed data
 
    zfp_stream* zfp = zfp_stream_open(NULL);
@@ -955,14 +957,14 @@ std::vector<uchar> compress(float* array, size_t arraySize, size_t& compressedSi
    return compressedData;
 }
 
-std::vector<T> decompressArrayFloat(char* compressedData, size_t compressedSize, size_t arraySize) {
+std::vector<T> decompressArrayFloat(uchar* compressedData, size_t compressedSize, size_t arraySize) {
 
    // Allocate memory for decompresseFloatd data
    std::vector<T> decompressedArray(arraySize);
 
    // Initialize ZFP decompression
    zfp_stream* zfp = zfp_stream_open(NULL);
-   /* zfp_stream_set_accuracy(zfp, 1e-3); */
+   zfp_stream_set_accuracy(zfp, 1e-3);
    bitstream* stream_decompress = stream_open(compressedData, compressedSize);
    zfp_stream_set_bit_stream(zfp, stream_decompress);
    zfp_stream_rewind(zfp);
@@ -971,6 +973,7 @@ std::vector<T> decompressArrayFloat(char* compressedData, size_t compressedSize,
    zfp_field* field_decompress;
    if (std::is_same<T, float>::value) field_decompress = zfp_field_1d(decompressedArray.data(), zfp_type_float, decompressedArray.size());
    if (std::is_same<T, double>::value) field_decompress = zfp_field_1d(decompressedArray.data(), zfp_type_double, decompressedArray.size());
+
    size_t retval = zfp_decompress(zfp, field_decompress);
    (void)retval;
    zfp_field_free(field_decompress);
@@ -981,57 +984,19 @@ std::vector<T> decompressArrayFloat(char* compressedData, size_t compressedSize,
 }
 
   void make_serialized_bytes() {
-
-    for (size_t k = 0; k< 100; k++) std::cout << this->serialized[k] << " ";
-    std::cout << "\n";
-    zfp_packed = (uchar**)malloc(sizeof(uchar*));
-    zfp_header = (uchar**)malloc(sizeof(uchar*));
-    auto conf = zfp_config_accuracy(1e-3);
-    
-    zfp_array compressed(this->serialized.size(), conf, this->serialized.data());
-    size_t zfp_packed_size = compressed.size_bytes();
-    uchar* compressed_data = (uchar*) compressed.compressed_data();
-    *zfp_packed = (uint8_t*)malloc(sizeof(uint8_t)*zfp_packed_size);
-
-    typename zfp_array::header my_h(compressed);
-
-    *zfp_header = (uchar*)malloc(sizeof(uchar)*my_h.size_bytes());
-
-    std::cout << "header size: " << my_h.size_bytes() << std::endl;
-
-    std::cout << "storage size: " << zfp_packed_size << " vs float data size " << sizeof(T)*this->serialized.size() << std::endl;
-
-    memcpy(*zfp_packed, compressed_data, zfp_packed_size);
-
-    zfp_header_size = my_h.size_bytes();
-    memcpy(*zfp_header, my_h.data(), zfp_header_size);
-
+    using namespace std;
+    cout << "serialized size: " << sizeof(T)*this->serialized.size() << endl;
+    this->packed = compress(this->serialized.data(), this->serialized.size(), this->zfp_packed_size);
+    cout << "packed size: " << this->zfp_packed_size << endl;
   }
 
   void unmake_serialized_bytes() {
+    auto unpacked = decompressArrayFloat(this->packed.data(), this->packed.size(), this->serialized.size());
+    /* this->serialized = decompressArrayFloat(this->packed.data(), this->packed.size(), this->serialized.size()); */
 
-    using namespace std;
-
-    typename zfp_array::header my_h(*zfp_header, zfp_header_size);
-    
-    /* zfp::array* p = zfp::const_array1<T>::construct(my_h); */
-    zfp::const_array1<T> p(my_h, *zfp_packed);
-    /* memcpy(p->compressed_data(), *zfp_packed, p->compressed_size()); */
-    zfp::const_array1<T>& a = p; //dynamic_cast<zfp::array1<T>*>(p);
-
-    a.flush_cache();
-    cout << "a.size: " << a.size() << endl;
-
-    this->serialized.resize(a.size());
-    for (size_t k = 0; k < a.size(); ++k) {
-      this->serialized[k] = a[k];
-    }
-    free(*zfp_packed); free(zfp_packed); 
-    free(*zfp_header); free(zfp_header); 
-    /* free(p); */
-
-    for (size_t k = 0; k< 100; k++) std::cout << a[k] << " ";
-    std::cout << "\n";
+    for(size_t k = 0; k<unpacked.size(); ++k) this->serialized[k] = unpacked[k];
+    for(int k = 0; k<100;++k) std::cout << this->serialized[k] << " ";
+    std::cout << std::endl;
   }
 
 public:
