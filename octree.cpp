@@ -17,6 +17,8 @@
 #include <zfp.hpp>
 #include <zfp/constarray1.hpp>
 #include <zfp/array1.hpp>
+#include <zfp/array.hpp>
+/* #include <zfp/factory.hpp> */
 
 #include "tree.hpp"
 
@@ -921,30 +923,115 @@ private:
 
   indexrange<L, N> root_range;
 
-  uchar** serialized_bytes = nullptr;
+  uchar** zfp_packed = nullptr;
+  uchar** zfp_header = nullptr;
+  size_t zfp_header_size, zfp_packed_size;
 
-  // TODO: 
+
+std::vector<uchar> compress(float* array, size_t arraySize, size_t& compressedSize) {
+   // Allocate memory for compressed data
+
+   zfp_stream* zfp = zfp_stream_open(NULL);
+   zfp_field* field;
+
+   if (std::is_same<T, float>::value) field = zfp_field_1d(array, zfp_type_float, arraySize);
+   if (std::is_same<T, double>::value) field = zfp_field_1d(array, zfp_type_double, arraySize);
+
+   size_t maxSize = zfp_stream_maximum_size(zfp, field);
+   std::vector<uchar> compressedData(maxSize);
+
+   // Initialize ZFP compression
+   zfp_stream_set_accuracy(zfp, 1e-3);
+   bitstream* stream = stream_open(compressedData.data(), compressedSize);
+   zfp_stream_set_bit_stream(zfp, stream);
+   zfp_stream_rewind(zfp);
+
+   // Compress the array
+   compressedSize = zfp_compress(zfp, field);
+   compressedData.erase(compressedData.begin() + compressedSize, compressedData.end());
+   zfp_field_free(field);
+   zfp_stream_close(zfp);
+   stream_close(stream);
+   return compressedData;
+}
+
+std::vector<T> decompressArrayFloat(char* compressedData, size_t compressedSize, size_t arraySize) {
+
+   // Allocate memory for decompresseFloatd data
+   std::vector<T> decompressedArray(arraySize);
+
+   // Initialize ZFP decompression
+   zfp_stream* zfp = zfp_stream_open(NULL);
+   /* zfp_stream_set_accuracy(zfp, 1e-3); */
+   bitstream* stream_decompress = stream_open(compressedData, compressedSize);
+   zfp_stream_set_bit_stream(zfp, stream_decompress);
+   zfp_stream_rewind(zfp);
+
+   // Decompress the array
+   zfp_field* field_decompress;
+   if (std::is_same<T, float>::value) field_decompress = zfp_field_1d(decompressedArray.data(), zfp_type_float, decompressedArray.size());
+   if (std::is_same<T, double>::value) field_decompress = zfp_field_1d(decompressedArray.data(), zfp_type_double, decompressedArray.size());
+   size_t retval = zfp_decompress(zfp, field_decompress);
+   (void)retval;
+   zfp_field_free(field_decompress);
+   zfp_stream_close(zfp);
+   stream_close(stream_decompress);
+
+   return decompressedArray;
+}
+
   void make_serialized_bytes() {
-    serialized_bytes = (uchar**)malloc(sizeof(uchar*));
-    auto conf = zfp_config_accuracy(1e-8);
+
+    for (size_t k = 0; k< 100; k++) std::cout << this->serialized[k] << " ";
+    std::cout << "\n";
+    zfp_packed = (uchar**)malloc(sizeof(uchar*));
+    zfp_header = (uchar**)malloc(sizeof(uchar*));
+    auto conf = zfp_config_accuracy(1e-3);
     
     zfp_array compressed(this->serialized.size(), conf, this->serialized.data());
-    size_t storage_size = compressed.size_bytes();
+    size_t zfp_packed_size = compressed.size_bytes();
     uchar* compressed_data = (uchar*) compressed.compressed_data();
+    *zfp_packed = (uint8_t*)malloc(sizeof(uint8_t)*zfp_packed_size);
 
-    *serialized_bytes = (uint8_t*)malloc(sizeof(uint8_t)*storage_size);
+    typename zfp_array::header my_h(compressed);
 
-    std::cout << "storage size: " << storage_size << " vs float data size " << sizeof(T)*this->serialized.size() << std::endl;
+    *zfp_header = (uchar*)malloc(sizeof(uchar)*my_h.size_bytes());
 
-    // TODO: this is memcpy but compiler probably knows what to do..
-    for(size_t k=0; k<storage_size; ++k) {
-      (*serialized_bytes)[k] = compressed_data[k];
-    }
+    std::cout << "header size: " << my_h.size_bytes() << std::endl;
+
+    std::cout << "storage size: " << zfp_packed_size << " vs float data size " << sizeof(T)*this->serialized.size() << std::endl;
+
+    memcpy(*zfp_packed, compressed_data, zfp_packed_size);
+
+    zfp_header_size = my_h.size_bytes();
+    memcpy(*zfp_header, my_h.data(), zfp_header_size);
 
   }
 
   void unmake_serialized_bytes() {
 
+    using namespace std;
+
+    typename zfp_array::header my_h(*zfp_header, zfp_header_size);
+    
+    /* zfp::array* p = zfp::const_array1<T>::construct(my_h); */
+    zfp::const_array1<T> p(my_h, *zfp_packed);
+    /* memcpy(p->compressed_data(), *zfp_packed, p->compressed_size()); */
+    zfp::const_array1<T>& a = p; //dynamic_cast<zfp::array1<T>*>(p);
+
+    a.flush_cache();
+    cout << "a.size: " << a.size() << endl;
+
+    this->serialized.resize(a.size());
+    for (size_t k = 0; k < a.size(); ++k) {
+      this->serialized[k] = a[k];
+    }
+    free(*zfp_packed); free(zfp_packed); 
+    free(*zfp_header); free(zfp_header); 
+    /* free(p); */
+
+    for (size_t k = 0; k< 100; k++) std::cout << a[k] << " ";
+    std::cout << "\n";
   }
 
 public:
@@ -994,10 +1081,12 @@ public:
       ++acc;
     }
 
-    bias = n_per_core*tuckers.size();
-    /* this->core_size = acc*n_per_core; */
+    cout << "core scale: " << this->core_scale << endl;
 
-    /* for (size_t k = 0; k < this->core_size; ++k) serialized[k] = serialized[k] / this->core_scale; */
+    bias = n_per_core*tuckers.size();
+    this->core_size = bias;
+
+    for (size_t k = 0; k < this->core_size; ++k) serialized[k] = serialized[k] / this->core_scale;
 
     acc = 0;
     for (auto &tuck : tuckers) {
@@ -1008,7 +1097,8 @@ public:
         }
       }
     }
-    /* this->make_serialized_bytes(); */
+    this->make_serialized_bytes();
+    this->unmake_serialized_bytes();
   }
 
   template<size_t N_ = N, std::enable_if_t<N_==3,int> = 0>
@@ -1017,7 +1107,7 @@ public:
     using namespace Eigen;
     using namespace std;
 
-    const size_t n_per_core = this->core_size;
+    const size_t n_per_core = pow(core_rank, N);
     size_t n_leaves = this->core_size / n_per_core; //this->leaf_coordinates.size();
     std::vector<TensorMap<Tensor<T, N>>> cores;
     std::vector<std::array<Matrix<T, Dynamic, core_rank>,N>> factorss;
@@ -1030,7 +1120,7 @@ public:
 #endif
 
     /* Rescale back */
-    /* for (size_t k = 0; k < this->core_size; ++k) this->serialized[k] = this->serialized[k] * this->core_scale; */
+    for (size_t k = 0; k < this->core_size; ++k) this->serialized[k] = this->serialized[k] * this->core_scale;
 
     for (int m = 0; m < n_leaves; ++m) {
       T* data = this->serialized.data();
