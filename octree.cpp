@@ -14,12 +14,9 @@
 
 #include <chrono>
 
-#include <zfp.hpp>
-#include <zfp/constarray1.hpp>
-#include <zfp/array1.hpp>
-#include <zfp/array.hpp>
-/* #include <zfp/factory.hpp> */
+#include <stdint.h>
 
+#include "zfp_iface.hpp"
 #include "tree.hpp"
 
 extern "C" {
@@ -860,7 +857,7 @@ private:
 
     for (size_t mode=0; mode<N; mode++) {
       op.setMode(mode);
-      SymEigsSolver<NormalFoldProd<T, L, N>> eigs(op, core_rank, MIN(core_rank+1, view.size(mode)) );
+      SymEigsSolver<NormalFoldProd<T, L, N>> eigs(op, core_rank, MAX(view.size(mode)/10, MIN(core_rank+5, view.size(mode))) );
       eigs.init();
 
       int nconv = eigs.compute(SortRule::LargestMagn);
@@ -910,10 +907,16 @@ private:
   using vecT = std::vector<T>;
   using vecS = std::vector<size_t>;
   using uptr = std::unique_ptr<Tucker<T,L,core_rank,N>>;
-  using zfp_array = zfp::const_array1<T>;
+  /* using zfp_array = zfp::const_array1<T>; */
 
   vecT serialized;
   size_t n_leaves;
+
+  /* TODO: serialize 
+   * - [ ] leaf_coordinates 
+   * - [ ] leaf_levels 
+   * - [ ] core_size */
+
   std::vector<atomic_coord_type> leaf_coordinates;
   std::vector<uint8_t> leaf_levels;
   size_t core_size;
@@ -923,80 +926,19 @@ private:
 
   indexrange<L, N> root_range;
 
-  uchar** zfp_packed = nullptr;
-  uchar** zfp_header = nullptr;
-  size_t zfp_header_size, zfp_packed_size;
+  size_t zfp_packed_size;
 
-  std::vector<uchar> packed;
-
-
-std::vector<uchar> compress(T* array, size_t arraySize, size_t& compressedSize) {
-   // Allocate memory for compressed data
-
-   zfp_stream* zfp = zfp_stream_open(NULL);
-   zfp_field* field;
-
-   if (std::is_same<T, float>::value) field = zfp_field_1d(array, zfp_type_float, arraySize);
-   if (std::is_same<T, double>::value) field = zfp_field_1d(array, zfp_type_double, arraySize);
-
-   size_t maxSize = zfp_stream_maximum_size(zfp, field);
-   std::vector<uchar> compressedData(maxSize);
-
-   // Initialize ZFP compression
-   zfp_stream_set_accuracy(zfp, 1e-3);
-   bitstream* stream = stream_open(compressedData.data(), compressedSize);
-   zfp_stream_set_bit_stream(zfp, stream);
-   zfp_stream_rewind(zfp);
-
-   // Compress the array
-   compressedSize = zfp_compress(zfp, field);
-   compressedData.erase(compressedData.begin() + compressedSize, compressedData.end());
-   zfp_field_free(field);
-   zfp_stream_close(zfp);
-   stream_close(stream);
-   return compressedData;
-}
-
-std::vector<T> decompressArrayFloat(uchar* compressedData, size_t compressedSize, size_t arraySize) {
-
-   // Allocate memory for decompresseFloatd data
-   std::vector<T> decompressedArray(arraySize);
-
-   // Initialize ZFP decompression
-   zfp_stream* zfp = zfp_stream_open(NULL);
-   zfp_stream_set_accuracy(zfp, 1e-3);
-   bitstream* stream_decompress = stream_open(compressedData, compressedSize);
-   zfp_stream_set_bit_stream(zfp, stream_decompress);
-   zfp_stream_rewind(zfp);
-
-   // Decompress the array
-   zfp_field* field_decompress;
-   if (std::is_same<T, float>::value) field_decompress = zfp_field_1d(decompressedArray.data(), zfp_type_float, decompressedArray.size());
-   if (std::is_same<T, double>::value) field_decompress = zfp_field_1d(decompressedArray.data(), zfp_type_double, decompressedArray.size());
-
-   size_t retval = zfp_decompress(zfp, field_decompress);
-   (void)retval;
-   zfp_field_free(field_decompress);
-   zfp_stream_close(zfp);
-   stream_close(stream_decompress);
-
-   return decompressedArray;
-}
+  std::vector<uint8_t> packed;
 
   void make_serialized_bytes() {
     using namespace std;
     cout << "serialized size: " << sizeof(T)*this->serialized.size() << endl;
-    this->packed = compress(this->serialized.data(), this->serialized.size(), this->zfp_packed_size);
+    this->packed = zfp_iface::compress<T>(this->serialized.data(), this->serialized.size(), this->zfp_packed_size);
     cout << "packed size: " << this->zfp_packed_size << endl;
   }
 
   void unmake_serialized_bytes() {
-    auto unpacked = decompressArrayFloat(this->packed.data(), this->packed.size(), this->serialized.size());
-    /* this->serialized = decompressArrayFloat(this->packed.data(), this->packed.size(), this->serialized.size()); */
-
-    for(size_t k = 0; k<unpacked.size(); ++k) this->serialized[k] = unpacked[k];
-    for(int k = 0; k<100;++k) std::cout << this->serialized[k] << " ";
-    std::cout << std::endl;
+    this->serialized = zfp_iface::decompressArrayFloat<T>(this->packed.data(), this->packed.size(), this->serialized.size());
   }
 
 public:
@@ -1007,10 +949,8 @@ public:
   template<size_t N_ = N, std::enable_if_t<N_==3,int> = 0>
   SerialTucker(std::vector<uptr>& tuckers, indexrange<L,N> root_range) : root_range(root_range) {
     using namespace std;
-    /* auto this = this; */
 
     const size_t n_per_core = pow(core_rank,N);
-    /* vector<size_t>& factor_lengths = this->factor_lengths; // Calculate factors lengths from leaf coordinates */
 
     size_t total_factorlengths = 0;
 
@@ -1066,6 +1006,8 @@ public:
     this->unmake_serialized_bytes();
   }
 
+/* TODO: 
+ * - [ ] move Deserialize outside SerialTucker and give all data explicitly in arguments */
   template<size_t N_ = N, std::enable_if_t<N_==3,int> = 0>
   /* void */ 
   std::vector<std::unique_ptr<Tucker<T,L,core_rank,N>>> Deserialize() {
@@ -1142,7 +1084,111 @@ public:
   
   template<typename T_, typename L_, size_t core_rank_, size_t N_, typename atomic_coord_type_>
     friend std::ostream& operator <<(std::ostream &o, const SerialTucker<T_, L_, core_rank_, N_, atomic_coord_type_>& R);
+
+  
+template<typename T_, typename L_, size_t core_rank_, size_t N_>
+friend std::vector<std::unique_ptr<Tucker<T_,L_,core_rank_,N_>>> Deserialize(uint32_t* root_dims, 
+                                                                  uint8_t* packed_bytes, uint64_t n_packed_bytes,
+                                                                  uint64_t n_serialized,
+                                                                  uint32_t* leaf_coordinates, uint32_t n_leaf_coordinates,
+                                                                  uint8_t* leaf_levels,
+                                                                  uint64_t core_size);
+
+void to_pod(uint32_t*& root_dims, 
+            uint8_t*& packed_bytes, uint64_t& n_packed_bytes,
+            uint64_t& n_serialized,
+            uint32_t*& leaf_coordinates, atomic_coord_type& n_leaf_coordinates,
+            uint8_t*& leaf_levels,
+            uint64_t& core_size) {
+
+  root_dims = { this->root_range.size(0), this->root_range.size(1), this->root_range.size(2)};
+  packed_bytes = this->packed.data();
+  n_packed_bytes = this->packed.size();
+
+  n_serialized = this->serialized.size();
+
+  leaf_coordinates = this->leaf_coordinates.data();
+  n_leaf_coordinates = this->leaf_coordinates.size();
+  leaf_levels = this->leaf_levels.data();
+  core_size = uint64_t(this->core_size);
+
+}
+
+void bytes_to_tucker_pod(uint8_t* data, size_t n_packed, 
+                         uint32_t*& root_dims, 
+                         uint8_t*& packed_bytes, uint64_t& n_packed_bytes,
+                         uint64_t& n_serialized,
+                         atomic_coord_type*& leaf_coordinates, uint32_t& n_leaf_coordinates,
+                         uint8_t*& leaf_levels,
+                         uint64_t& core_size)
+{
+  ptrdiff_t acc=0;
+  root_dims = new uint32_t[N];
+
+  n_packed_bytes = *(uint64_t*)(data+acc);
+  acc = acc+sizeof(uint64_t);
+
+  n_serialized = *(uint64_t*)(data+acc);
+  acc = acc+sizeof(uint64_t);
+
+  n_leaf_coordinates = *(uint32_t*)(data+acc);
+  acc = acc+sizeof(uint32_t);
+
+  core_size = *(uint64_t*)(data+acc);
+  acc = acc+sizeof(uint64_t);
+
+  uint8_t bytes_per_leaf_coordinate = *(uint8_t*)(data+acc);
+  acc = acc + sizeof(uint8_t);
+
+  assertm(bytes_per_leaf_coordinate == sizeof(atomic_coord_type), "Error: invalid bytes per leaf coordinate");
+
+
+}
+
 };
+
+template<typename T, typename L, size_t core_rank, size_t N>
+std::vector<std::unique_ptr<Tucker<T,L,core_rank,N>>> Deserialize(uint32_t* root_dims, 
+                                                                  uint8_t* packed_bytes, uint64_t n_packed_bytes,
+                                                                  uint64_t n_serialized,
+                                                                  uint32_t* leaf_coordinates, uint32_t n_leaf_coordinates,
+                                                                  uint8_t* leaf_levels,
+                                                                  uint64_t core_size) {
+
+  using namespace std;
+  using atomic_coord_type = typeof(n_leaf_coordinates);
+
+
+  SerialTucker<T,L,core_rank,N,atomic_coord_type> serializer;
+  serializer.packed = vector<uint8_t>();
+  serializer.packed.resize(n_packed_bytes);
+  memcpy(serializer.packed.data(), packed_bytes, n_packed_bytes);
+
+  serializer.zfp_packed[0] = packed_bytes;
+  /* serializer.zfp_packed_size = n_packed_bytes; */
+
+  serializer.serialized = vector<T>();
+  serializer.serialized.resize(n_serialized);
+
+  serializer.leaf_coordinates = vector<atomic_coord_type>();
+  serializer.leaf_coordinates.resize(n_leaf_coordinates);
+  memcpy(serializer.leaf_levels.data(), leaf_levels, n_leaf_coordinates);
+
+  serializer.leaf_levels = vector<uint8_t>();
+  serializer.leaf_levels.resize(n_leaf_coordinates);
+  memcpy(serializer.leaf_coordinates.data(), leaf_coordinates, n_leaf_coordinates*sizeof(atomic_coord_type));
+
+  serializer.core_size = size_t(core_size); // TODO: warning size_t might be 4 bytes and uint64_t is always 8
+
+  uint32_t Nx = root_dims[0];
+  uint32_t Ny = root_dims[1];
+  uint32_t Nz = root_dims[2];
+
+  serializer.root_range = indexrange<L,N>({0,Nx-1},{0,Ny-1},{0,Nz-1});
+
+  return serializer.Deserialize();
+}
+
 
 template<typename T_, typename L_, size_t core_rank_, size_t N_, typename atomic_coord_type_>
 std::ostream& operator <<(std::ostream &o, const SerialTucker<T_, L_, core_rank_, N_, atomic_coord_type_>& R) {
@@ -1163,7 +1209,9 @@ std::ostream& operator <<(std::ostream &o, const SerialTucker<T_, L_, core_rank_
 }
 
 extern "C" {
-  /* TODO: deal with situation w/ too small gridsizes */
+  /* TODO: 
+   * - [ ] what happens when data is zero. Then residual should be immediately under tolerance!
+   * - [ ] return pointer to packed buffer and some lengths */
   void compress_with_octree_method(VDF_REAL_DTYPE* buffer, 
                                    const size_t Nx, const size_t Ny, const size_t Nz, 
                                    VDF_REAL_DTYPE tolerance, double& compression_ratio) {
