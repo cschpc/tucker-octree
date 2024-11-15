@@ -924,9 +924,9 @@ private:
 
   void make_serialized_bytes() {
     using namespace std;
-    cout << "serialized size: " << sizeof(T)*this->serialized.size() << endl;
+    /* cout << "serialized size: " << sizeof(T)*this->serialized.size() << endl; */
     this->packed = zfp_iface::compress<T>(this->serialized.data(), this->serialized.size(), this->packed_size);
-    cout << "packed size: " << this->packed_size << endl;
+    /* cout << "packed size: " << this->packed_size << endl; */
   }
 
   void unmake_serialized_bytes() {
@@ -1242,21 +1242,21 @@ void compressed_octree_t_to_bytes(compressed_octree_t pod, uint8_t **bytes, uint
 {
 
   ptrdiff_t acc;
-  std::cout << "BEFORE DESERIALIZATION:\n";
-  print_compressed_octree_t(pod);
+  /* std::cout << "BEFORE DESERIALIZATION:\n"; */
+  /* print_compressed_octree_t(pod); */
 
 #define stof(X) sizeof(typeof(X))
 #define stofp(X) sizeof(typeof(*(X)))
 
 #define copy_atomic(X) \
   if (state!=0) memcpy((*bytes)+acc, &X, stof(X)); \
-  acc = acc + stof(X); \
-  std::cout << "acc: " << acc << std::endl
+  acc = acc + stof(X)
+  /* std::cout << "acc: " << acc << std::endl */
 
 #define copy_ptr(X,Y) \
   if (state!=0) memcpy((*bytes)+acc, X, Y*stofp(X)); \
-  acc = acc + Y*stofp(X); \
-  std::cout << "acc: " << acc << std::endl
+  acc = acc + Y*stofp(X)
+  /* std::cout << "acc: " << acc << std::endl */
 
   // state == 0: count n_bytes and allocate *bytes and set B = *bytes
   // state == 1: copy data to *bytes
@@ -1294,16 +1294,17 @@ void compressed_octree_t_to_bytes(compressed_octree_t pod, uint8_t **bytes, uint
 #undef stof
 #undef copy_ptr
 #undef copy_atomic
-    {
-    FILE *fp = fopen("bytes.bin", "wb");
-    fwrite(*bytes, 1, acc, fp);
-    fclose(fp);
-    }
-    {
-    FILE *fp = fopen("packed.bin", "wb");
-    fwrite(pod.packed_bytes, 1, pod.n_packed_bytes, fp);
-    fclose(fp);
-    }
+  // TODO
+    /* { */
+    /* FILE *fp = fopen("bytes.bin", "wb"); */
+    /* fwrite(*bytes, 1, acc, fp); */
+    /* fclose(fp); */
+    /* } */
+    /* { */
+    /* FILE *fp = fopen("packed.bin", "wb"); */
+    /* fwrite(pod.packed_bytes, 1, pod.n_packed_bytes, fp); */
+    /* fclose(fp); */
+    /* } */
 }
 
 // TODO: move thins to somewhere else
@@ -1312,7 +1313,7 @@ compressed_octree_t bytes_to_compressed_octree_t(uint8_t* data, uint64_t n_packe
 
 #define stof(X) sizeof(typeof(X))
 #define stofp(X) sizeof(typeof(*(X)))
-#define printacc std::cout << "acc: " << acc << std::endl
+#define printacc // std::cout << "acc: " << acc << std::endl
 
   ptrdiff_t acc = 0;
 
@@ -1374,8 +1375,8 @@ compressed_octree_t bytes_to_compressed_octree_t(uint8_t* data, uint64_t n_packe
 
   assert(n_packed == acc && "n_packed and number of bytes read does not match");
 
-  std::cout << "AFTER DESERIALIZATION:\n";
-  print_compressed_octree_t(pod);
+  /* std::cout << "AFTER DESERIALIZATION:\n"; */
+  /* print_compressed_octree_t(pod); */
   return pod;
 #undef stof
 #undef stofp
@@ -1410,7 +1411,7 @@ compressed_octree_t bytes_to_compressed_octree_t(uint8_t* data, uint64_t n_packe
 
     auto res0 = view.get_residual();
 
-    const int maxiter = 40;
+    const int maxiter = 100;
 
     std::vector<unique_ptr<Tucker<VDF_REAL_DTYPE,UI,core_rank,3>>> tuckers;
 
@@ -1441,14 +1442,14 @@ compressed_octree_t bytes_to_compressed_octree_t(uint8_t* data, uint64_t n_packe
       relres = residual/res0;
 
       /* cout << "tol: " << tolerance << " worst leaf: " << worst_leaf->level << " : "<<  worst_leaf->data << " residual: " << relres << endl; */
-      cout << "worst leaf: " << worst_leaf->level << " : "<<  worst_leaf->data << " residual: " << residual;
+      /* cout << "worst leaf: " << worst_leaf->level << " : "<<  worst_leaf->data << " residual: " << residual; */
       divide_leaf(*worst_leaf);
 
       OctreeCoordinates<3> worst_coords = leaf_to_coordinates(*worst_leaf);
       uint32_t atomic_coords = worst_coords.template toAtomic<uint32_t>();
-      cout << worst_leaf->level << "\t|  worst_coords: " << worst_coords <<":"<<atomic_coords<< ":" 
-          << OctreeCoordinates<3>(worst_coords.template toAtomic<uint32_t>(), worst_leaf->level) 
-          << " inds: " << K.getsubrange(worst_coords) << endl;
+      /* cout << worst_leaf->level << "\t|  worst_coords: " << worst_coords <<":"<<atomic_coords<< ":" */ 
+      /*     << OctreeCoordinates<3>(worst_coords.template toAtomic<uint32_t>(), worst_leaf->level) */ 
+      /*     << " inds: " << K.getsubrange(worst_coords) << endl; */
 
       std::unique_ptr<TensorView<VDF_REAL_DTYPE,UI,3>> c_view(new TensorView<VDF_REAL_DTYPE,UI,3>(datatensor, worst_leaf->data));
       std::unique_ptr<Tucker<VDF_REAL_DTYPE, UI, 2, 3>> tuck(new Tucker<VDF_REAL_DTYPE,UI,2,3>(std::move(c_view))); /* TODO: save tucker to leaf! */
