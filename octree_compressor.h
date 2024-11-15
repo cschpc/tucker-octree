@@ -12,8 +12,20 @@
 #define ATOMIC_OCTREE_COORDINATE_DTYPE uint32_t
 #endif
 
+#ifndef OCTREE_TUCKER_CORE_RANK
+#define OCTREE_TUCKER_CORE_RANK 2
+#endif
+
 #ifndef MAX_ROOT_DIMS
 #define MAX_ROOT_DIMS 12
+#endif
+
+#ifndef VDF_REAL_DTYPE
+#define VDF_REAL_DTYPE float
+#endif
+
+#ifndef OCTREE_VIEW_INDEX_TYPE
+#define OCTREE_VIEW_INDEX_TYPE uint32_t
 #endif
 
 extern "C" {
@@ -49,10 +61,11 @@ void compress_with_octree_method_new(VDF_REAL_DTYPE* buffer, const size_t Nx, co
 
 void compress_with_octree_method(VDF_REAL_DTYPE* buffer, 
                                  const size_t Nx, const size_t Ny, const size_t Nz, 
-                                 VDF_REAL_DTYPE tolerance, double& compression_ratio);
+                                 VDF_REAL_DTYPE tolerance, 
+                                 uint8_t** serialized_buffer, uint64_t* serialized_buffer_size);
 
-void uncompress_with_octree_method(VDF_REAL_DTYPE* buffer, const size_t NX, const size_t Ny, const size_t Nz,
-                                   uint8_t* compressed);
+void uncompress_with_octree_method(VDF_REAL_DTYPE* buffer, const size_t Nx, const size_t Ny, const size_t Nz,
+                                   uint8_t* serialized_buffer, uint64_t serialized_buffer_size, bool clear_buffer);
 
 }
 #endif

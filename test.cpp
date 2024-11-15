@@ -133,7 +133,7 @@ namespace octree_test {
       /* divide_leaf(tree); */
       UI big_N = MAX(Nx, MAX(Ny,Nz));
       auto f = [&](int I) {return M_PIf64*(I+1)/big_N;};
-      auto F = [&](int I1, int I2, int I3) {return exp(-pow((I1+I2+I3)/(0.5*big_N),2))*sin(M_PIf64*(I1+I2+I3+1)/(2*big_N));};
+      auto F = [&](int I1, int I2, int I3) {return exp(-pow((I1+I2+I3)/(big_N),2))*sin(M_PIf64*(I1+I2+I3+1)/(2*big_N));};
 
       auto view = TensorView<double,UI,3>(datatensor, K);
       for (int i1 = 0; i1<view.size(0); i1++) {
