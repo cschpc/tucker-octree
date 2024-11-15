@@ -50,7 +50,11 @@ endif(WITH_HIP)
 
 option(VERBOSE_DEBUG "Output verbose debugging messages" OFF)
 option(BRIEF_DEBUG "Output brief debugging messages" OFF)
-set(VDF_REAL_DTYPE "float" CACHE STRING "")
+
+set(VDF_REAL_DTYPE "float" CACHE STRING "Datatype of the dense input buffer")
+set(OCTREE_TUCKER_CORE_RANK 2 CACHE STRING "Tucker core dimension in one dimension")
+
+CONFIGURE_FILE(config.h.cmake config.h)
 
 if(VERBOSE_DEBUG)
   add_compile_definitions(VERBOSE_DEBUG)
@@ -63,6 +67,12 @@ endif()
 add_compile_definitions("VDF_REAL_DTYPE=${VDF_REAL_DTYPE}")
 
 include_directories(${CMAKE_SOURCE_DIR}/contrib/include)
+include_directories(${CMAKE_BINARY_DIR})
+
+install(TARGETS octree_compressor)
+INSTALL(FILES ${CMAKE_SOURCE_DIR}/octree_compressor.h ${CMAKE_BINARY_DIR}/config.h TYPE INCLUDE)
+
+
 # target_link_libraries(octree ${BLAS_LIBRARIES} ${LAPACK_LIBRARIES})
 
 

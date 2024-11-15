@@ -4,6 +4,10 @@
 #include <stdlib.h>
 #include <stdint.h>
 
+#include "config.h"
+
+// TODO: generate a config.h file with VDF_REAL_DTYPE etc with cmake
+
 #ifndef VDF_REAL_DTYPE
 #define VDF_REAL_DTYPE float
 #endif
@@ -17,11 +21,7 @@
 #endif
 
 #ifndef MAX_ROOT_DIMS
-#define MAX_ROOT_DIMS 12
-#endif
-
-#ifndef VDF_REAL_DTYPE
-#define VDF_REAL_DTYPE float
+#define MAX_ROOT_DIMS 3
 #endif
 
 #ifndef OCTREE_VIEW_INDEX_TYPE
