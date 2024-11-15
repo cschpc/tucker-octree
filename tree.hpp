@@ -12,19 +12,22 @@
 
 namespace tree {
 
+  enum empty_t {};
+
 /* This is N-tree leaf (or node!) */
 template <typename T, size_t N> struct leaf {
   T data;
   leaf<T,N> *children = NULL;
   leaf<T,N> *parent = NULL;
   size_t level = 0;
-  int8_t coordinate = -1; 
-  const size_t n_children = pow(2,3);
+  int8_t coordinate = -1;  // TODO: N <= 7
+  const size_t n_children = pow(2,N);
 public:
   /* leaf(T data): data(data) {} */
 
   leaf() {};
   leaf(T data) : data(data) {};
+  leaf(empty_t x) {};
 
   ~leaf(){
     data.~T();
@@ -33,12 +36,17 @@ public:
     }
   }
 
+  bool isempty() {
+    return (this->children == NULL) && (this->parent == NULL) && (this->coordinate == -1);
+  }
+
   /* Iterate over leaves with for(auto&& leaf : tree) */ 
   class LeafIterator;
   LeafIterator begin() { return LeafIterator(this); }
   LeafIterator end() { return LeafIterator(nullptr); }
-
 };
+
+
 
 template <typename T, size_t N>
 struct leaf<T,N>::LeafIterator {
@@ -54,9 +62,9 @@ public:
   leaf<T,N>& operator*() { return *(this->curr); }
 
   // prefix increment
-  leaf<T,N>& operator++ () {
+  leaf<T,N>* operator++ () {
     moveToNextValid();
-    return *(this->stack.top());
+    return (this->curr);
   }
 
   bool operator==(const LeafIterator& R) {
@@ -77,10 +85,10 @@ private:
       leaf<T,N>* node = stack.top();
 
       stack.pop();
-      if (!node->children) {curr = node; return;}
+      if (!node->children) {this->curr = node; return;}
 
       for (int i = 0; i < node->n_children; i++) stack.push(&(node->children[i]));
-    }
+    } 
   }
 };
 

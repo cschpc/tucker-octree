@@ -3,6 +3,8 @@
 #include <fstream>
 #include <iostream>
 
+#include <stdio.h>
+
 #include <argparse.hpp>
 
 namespace octree_test {
@@ -149,7 +151,8 @@ namespace octree_test {
 
         // find worst leaf
         leaf<indexrange<UI,3>,3>* worst_leaf;
-        for (auto&& leaf : tree) {
+        for (auto it = tree.begin(); it != tree.end(); ++it) {
+          auto& leaf = *it;
           auto c_view = TensorView<double, UI, 3>(datatensor, leaf.data);
           double c_residual = c_view.get_residual();
           if (c_residual > residual) {
@@ -189,9 +192,19 @@ namespace octree_test {
       }
 
       auto serialized = SerialTucker<double, UI, core_rank, 3, uint32_t>(tuckers, K);
+      compressed_octree_t pod;
+      pod = serialized.to_pod();
+      uint8_t* bytes;
+      uint64_t n_bytes;
+      compressed_octree_t_to_bytes(pod, &bytes, &n_bytes);
 
-      size_t acc = 1;
-      size_t counter = 1;
+        {
+        FILE *fp = fopen("bytes_test.bin", "wb");
+        fwrite(bytes, 1, n_bytes, fp);
+        fclose(fp);
+        }
+
+      auto repod = bytes_to_compressed_octree_t(bytes, n_bytes);
 
       if (settings::outfile.length() > 0) {
         std::ofstream(settings::outfile, ios::trunc) << serialized;
@@ -200,7 +213,8 @@ namespace octree_test {
       }
 
       /* auto detuckers = */ 
-      auto detuckers = serialized.Deserialize();
+      /* auto detuckers_old = serialized.Deserialize(); */
+      auto detuckers = Deserialize<double, UI, core_rank, 3>(repod);
 
       view.fill(double(0));
 

@@ -12,6 +12,8 @@
 #include <Spectra/SymEigsSolver.h>
 #include <Spectra/GenEigsSolver.h>
 
+#include <stdio.h>
+
 #include <chrono>
 
 #include <stdint.h>
@@ -857,7 +859,7 @@ private:
 
     for (size_t mode=0; mode<N; mode++) {
       op.setMode(mode);
-      SymEigsSolver<NormalFoldProd<T, L, N>> eigs(op, core_rank, MAX(view.size(mode)/10, MIN(core_rank+5, view.size(mode))) );
+      SymEigsSolver<NormalFoldProd<T, L, N>> eigs(op, core_rank, MAX(view.size(mode)/10, MIN(core_rank+3, view.size(mode))) );
       eigs.init();
 
       int nconv = eigs.compute(SortRule::LargestMagn);
@@ -907,34 +909,27 @@ private:
   using vecT = std::vector<T>;
   using vecS = std::vector<size_t>;
   using uptr = std::unique_ptr<Tucker<T,L,core_rank,N>>;
-  /* using zfp_array = zfp::const_array1<T>; */
 
   vecT serialized;
   size_t n_leaves;
 
-  /* TODO: serialize 
-   * - [ ] leaf_coordinates 
-   * - [ ] leaf_levels 
-   * - [ ] core_size */
-
   std::vector<atomic_coord_type> leaf_coordinates;
   std::vector<uint8_t> leaf_levels;
-  size_t core_size;
+  uint64_t core_size;
 
   T core_scale = 0;
   size_t n_core;
 
   indexrange<L, N> root_range;
 
-  size_t zfp_packed_size;
-
+  uint64_t packed_size;
   std::vector<uint8_t> packed;
 
   void make_serialized_bytes() {
     using namespace std;
     cout << "serialized size: " << sizeof(T)*this->serialized.size() << endl;
-    this->packed = zfp_iface::compress<T>(this->serialized.data(), this->serialized.size(), this->zfp_packed_size);
-    cout << "packed size: " << this->zfp_packed_size << endl;
+    this->packed = zfp_iface::compress<T>(this->serialized.data(), this->serialized.size(), this->packed_size);
+    cout << "packed size: " << this->packed_size << endl;
   }
 
   void unmake_serialized_bytes() {
@@ -946,6 +941,9 @@ public:
   const size_t& getCoreSizes() { return this->core_size; }
   const vecT& getSerialized() { return this->serialized; }
 
+  // Empty constructor
+  
+  SerialTucker() {};
   template<size_t N_ = N, std::enable_if_t<N_==3,int> = 0>
   SerialTucker(std::vector<uptr>& tuckers, indexrange<L,N> root_range) : root_range(root_range) {
     using namespace std;
@@ -1003,7 +1001,6 @@ public:
       }
     }
     this->make_serialized_bytes();
-    this->unmake_serialized_bytes();
   }
 
 /* TODO: 
@@ -1015,7 +1012,7 @@ public:
     using namespace std;
 
     const size_t n_per_core = pow(core_rank, N);
-    size_t n_leaves = this->core_size / n_per_core; //this->leaf_coordinates.size();
+    size_t n_leaves = this->core_size / n_per_core;
     std::vector<TensorMap<Tensor<T, N>>> cores;
     std::vector<std::array<Matrix<T, Dynamic, core_rank>,N>> factorss;
     std::vector<OctreeCoordinates<N>> coordss;
@@ -1083,109 +1080,114 @@ public:
   }
   
   template<typename T_, typename L_, size_t core_rank_, size_t N_, typename atomic_coord_type_>
-    friend std::ostream& operator <<(std::ostream &o, const SerialTucker<T_, L_, core_rank_, N_, atomic_coord_type_>& R);
+    friend std::ostream& operator <<(std::ostream&, const SerialTucker<T_, L_, core_rank_, N_, atomic_coord_type_>&);
 
   
-template<typename T_, typename L_, size_t core_rank_, size_t N_>
-friend std::vector<std::unique_ptr<Tucker<T_,L_,core_rank_,N_>>> Deserialize(uint32_t* root_dims, 
-                                                                  uint8_t* packed_bytes, uint64_t n_packed_bytes,
-                                                                  uint64_t n_serialized,
-                                                                  uint32_t* leaf_coordinates, uint32_t n_leaf_coordinates,
-                                                                  uint8_t* leaf_levels,
-                                                                  uint64_t core_size);
+  template<typename T_, typename L_, size_t core_rank_, size_t N_>
+    friend std::vector<std::unique_ptr<Tucker<T_,L_,core_rank_,N_>>> Deserialize(compressed_octree_t);
 
-void to_pod(uint32_t*& root_dims, 
-            uint8_t*& packed_bytes, uint64_t& n_packed_bytes,
-            uint64_t& n_serialized,
-            uint32_t*& leaf_coordinates, atomic_coord_type& n_leaf_coordinates,
-            uint8_t*& leaf_levels,
-            uint64_t& core_size) {
+  compressed_octree_t to_pod() {
 
-  root_dims = { this->root_range.size(0), this->root_range.size(1), this->root_range.size(2)};
-  packed_bytes = this->packed.data();
-  n_packed_bytes = this->packed.size();
+    // TODO: allocate data to packed_bytes and leaf_coordinates and leaf_levels
+    using namespace std;
 
-  n_serialized = this->serialized.size();
+    compressed_octree_t pod;
 
-  leaf_coordinates = this->leaf_coordinates.data();
-  n_leaf_coordinates = this->leaf_coordinates.size();
-  leaf_levels = this->leaf_levels.data();
-  core_size = uint64_t(this->core_size);
+    assert(N<=MAX_ROOT_DIMS && "Dimension of data is greater than MAX_ROOT_DIMS");
 
-}
+    pod.n_root_dims = N;
+    for (size_t k = 0; k<N; ++k) pod.root_dims[k] = this->root_range.size(k);
 
-void bytes_to_tucker_pod(uint8_t* data, size_t n_packed, 
-                         uint32_t*& root_dims, 
-                         uint8_t*& packed_bytes, uint64_t& n_packed_bytes,
-                         uint64_t& n_serialized,
-                         atomic_coord_type*& leaf_coordinates, uint32_t& n_leaf_coordinates,
-                         uint8_t*& leaf_levels,
-                         uint64_t& core_size)
-{
-  ptrdiff_t acc=0;
-  root_dims = new uint32_t[N];
+    /* pod.packed_bytes = (typeof(pod.packed_bytes))malloc(sizeof(typeof(*(pod.packed_bytes)))*this->packed_size); */
+    /* for (size_t k = 0; k < this->packed_size; ++k) { */
+    /*   pod.packed_bytes[k] = this->packed[k]; */
+    /* } */
+    pod.packed_bytes = this->packed.data();
 
-  n_packed_bytes = *(uint64_t*)(data+acc);
-  acc = acc+sizeof(uint64_t);
+    pod.n_packed_bytes = this->packed_size;
 
-  n_serialized = *(uint64_t*)(data+acc);
-  acc = acc+sizeof(uint64_t);
+    pod.n_serialized = this->serialized.size();
 
-  n_leaf_coordinates = *(uint32_t*)(data+acc);
-  acc = acc+sizeof(uint32_t);
+    /* cout << "this->leaf_coordinates: " ; */
+    /* for (size_t k = 0; k<this->leaf_coordinates.size(); ++k) cout << this->leaf_coordinates[k] << " "; */
+    /* cout << endl; */
 
-  core_size = *(uint64_t*)(data+acc);
-  acc = acc+sizeof(uint64_t);
+    pod.leaf_coordinates = this->leaf_coordinates.data();
+    pod.n_leaf_coordinates = this->leaf_coordinates.size();
+    pod.leaf_levels = this->leaf_levels.data();
+    pod.core_size = uint64_t(this->core_size);
+    pod.bytes_per_leaf_coordinate = sizeof(atomic_coord_type);
+    pod.core_scale = this->core_scale;
 
-  uint8_t bytes_per_leaf_coordinate = *(uint8_t*)(data+acc);
-  acc = acc + sizeof(uint8_t);
+    return pod; 
 
-  assertm(bytes_per_leaf_coordinate == sizeof(atomic_coord_type), "Error: invalid bytes per leaf coordinate");
-
-
-}
+  }
 
 };
 
 template<typename T, typename L, size_t core_rank, size_t N>
-std::vector<std::unique_ptr<Tucker<T,L,core_rank,N>>> Deserialize(uint32_t* root_dims, 
-                                                                  uint8_t* packed_bytes, uint64_t n_packed_bytes,
-                                                                  uint64_t n_serialized,
-                                                                  uint32_t* leaf_coordinates, uint32_t n_leaf_coordinates,
-                                                                  uint8_t* leaf_levels,
-                                                                  uint64_t core_size) {
+std::vector<std::unique_ptr<Tucker<T,L,core_rank,N>>> Deserialize(compressed_octree_t pod) {
 
   using namespace std;
-  using atomic_coord_type = typeof(n_leaf_coordinates);
+  using atomic_coord_type = ATOMIC_OCTREE_COORDINATE_DTYPE;
 
+  assert(pod.n_root_dims == N && "Incompatible dimension!");
 
   SerialTucker<T,L,core_rank,N,atomic_coord_type> serializer;
-  serializer.packed = vector<uint8_t>();
-  serializer.packed.resize(n_packed_bytes);
-  memcpy(serializer.packed.data(), packed_bytes, n_packed_bytes);
 
-  serializer.zfp_packed[0] = packed_bytes;
-  /* serializer.zfp_packed_size = n_packed_bytes; */
+  serializer.packed = vector<uint8_t>();
+  serializer.packed.resize(pod.n_packed_bytes);
+
+#warning "memcpy looks dangerous here. Just do a for-loop?"
+  memcpy(serializer.packed.data(), pod.packed_bytes, pod.n_packed_bytes);
+
+  serializer.packed_size = pod.n_packed_bytes;
 
   serializer.serialized = vector<T>();
-  serializer.serialized.resize(n_serialized);
+  serializer.serialized.resize(pod.n_serialized);
 
   serializer.leaf_coordinates = vector<atomic_coord_type>();
-  serializer.leaf_coordinates.resize(n_leaf_coordinates);
-  memcpy(serializer.leaf_levels.data(), leaf_levels, n_leaf_coordinates);
+  serializer.leaf_coordinates.resize(pod.n_leaf_coordinates);
 
   serializer.leaf_levels = vector<uint8_t>();
-  serializer.leaf_levels.resize(n_leaf_coordinates);
-  memcpy(serializer.leaf_coordinates.data(), leaf_coordinates, n_leaf_coordinates*sizeof(atomic_coord_type));
+  serializer.leaf_levels.resize(pod.n_leaf_coordinates);
 
-  serializer.core_size = size_t(core_size); // TODO: warning size_t might be 4 bytes and uint64_t is always 8
+#warning "memcpy looks dangerous here. Just do a for-loop?"
+  memcpy(serializer.leaf_levels.data(), pod.leaf_levels, pod.n_leaf_coordinates);
 
-  uint32_t Nx = root_dims[0];
-  uint32_t Ny = root_dims[1];
-  uint32_t Nz = root_dims[2];
+#warning "memcpy looks dangerous here. Just do a for-loop?"
+  memcpy(serializer.leaf_coordinates.data(), pod.leaf_coordinates, pod.n_leaf_coordinates*sizeof(atomic_coord_type));
 
-  serializer.root_range = indexrange<L,N>({0,Nx-1},{0,Ny-1},{0,Nz-1});
+  serializer.core_size = pod.core_size;
+  serializer.core_scale = pod.core_scale;
 
+  uint32_t Nx, Ny, Nz;
+  switch(N){
+    case 3:
+    Nx = pod.root_dims[0];
+    Ny = pod.root_dims[1];
+    Nz = pod.root_dims[2];
+    serializer.root_range = indexrange<L,N>({0,0,0},{Nx-1,Ny-1,Nz-1});
+    break;
+
+    case 2:
+    Nx = pod.root_dims[0];
+    Ny = pod.root_dims[1];
+    serializer.root_range = indexrange<L,N>({0,0},{Nx-1,Ny-1});
+    cout << "Warning: dimension 2 is not fully supported\n";
+    exit(0);
+    break;
+
+    default:
+    assert( (N!=2 && N!=3) && "Incompatible dimension requested" );
+    break;
+  }
+
+  serializer.unmake_serialized_bytes();
+  cout << "################################\n";
+  cout << serializer;
+  cout << endl;
+  cout << "################################\n";
   return serializer.Deserialize();
 }
 
@@ -1203,12 +1205,193 @@ std::ostream& operator <<(std::ostream &o, const SerialTucker<T_, L_, core_rank_
       corefactor = "F";
     }
   }
+
+  acc = 0;
+  corefactor = "LC";
+  for (auto&& it: R.leaf_coordinates) {
+    o << corefactor << ", " << ++acc << ", " << it << ", " << (int)R.leaf_levels[acc-1] << endl;
+  }
   return o;
 }
 
 }
 
 extern "C" {
+
+void print_compressed_octree_t(compressed_octree_t pod)
+  {
+
+  using namespace std;
+  for(int k = 0; k<pod.n_root_dims; ++k) cout << pod.root_dims[k] << " ";
+  cout << endl;
+
+  cout << "n_root_dims: " << (int)pod.n_root_dims << endl;
+
+  cout << "n_packed_bytes: " << pod.n_packed_bytes << endl;
+
+  for(int k = 0; k<pod.n_packed_bytes; ++k) cout << int(pod.packed_bytes[k]) << " ";
+  cout << endl;
+
+  cout << "n_serialized: " << pod.n_serialized << endl;
+
+  cout << "n_leaf_coordinates: " << pod.n_leaf_coordinates << endl;
+
+  cout << "leaf coordinates: \n";
+  for(int k = 0; k<pod.n_leaf_coordinates; ++k) cout << pod.leaf_coordinates[k] << " "; cout << endl;
+
+  cout << "leaf levels: \n";
+  for(int k = 0; k<pod.n_leaf_coordinates; ++k) cout << (int)pod.leaf_levels[k] << " "; cout << endl;
+
+  cout << "core_size: " << pod.core_size << endl;
+  cout << "bytes_per_leaf_coordinate: " << (int)pod.bytes_per_leaf_coordinate << endl;
+  cout << "core_scale: " << pod.core_scale << endl;
+  
+}
+
+void compressed_octree_t_to_bytes(compressed_octree_t pod, uint8_t **bytes, uint64_t* n_bytes)
+{
+
+  ptrdiff_t acc;
+  std::cout << "BEFORE DESERIALIZATION:\n";
+  print_compressed_octree_t(pod);
+
+#define stof(X) sizeof(typeof(X))
+#define stofp(X) sizeof(typeof(*(X)))
+
+#define copy_atomic(X) \
+  if (state!=0) memcpy((*bytes)+acc, &X, stof(X)); \
+  acc = acc + stof(X); \
+  std::cout << "acc: " << acc << std::endl
+
+#define copy_ptr(X,Y) \
+  if (state!=0) memcpy((*bytes)+acc, X, Y*stofp(X)); \
+  acc = acc + Y*stofp(X); \
+  std::cout << "acc: " << acc << std::endl
+
+  // state == 0: count n_bytes and allocate *bytes and set B = *bytes
+  // state == 1: copy data to *bytes
+  for(int state = 0; state<2; ++state) {
+    acc = 0;
+
+    copy_atomic(pod.n_root_dims);
+
+    copy_ptr(pod.root_dims, pod.n_root_dims);
+
+    copy_atomic(pod.n_packed_bytes);
+
+    copy_ptr(pod.packed_bytes, pod.n_packed_bytes);
+
+    copy_atomic(pod.n_serialized);
+
+    copy_atomic(pod.n_leaf_coordinates);
+
+    copy_ptr(pod.leaf_coordinates, pod.n_leaf_coordinates);
+
+    copy_ptr(pod.leaf_levels, pod.n_leaf_coordinates);
+
+    copy_atomic(pod.core_size);
+
+    copy_atomic(pod.bytes_per_leaf_coordinate);
+
+    copy_atomic(pod.core_scale);
+
+    if (state == 0) {
+      *n_bytes = acc;
+      *bytes = (uint8_t*)malloc(sizeof(uint8_t)*(*n_bytes));
+    }
+  }
+#undef stof
+#undef stof
+#undef copy_ptr
+#undef copy_atomic
+    {
+    FILE *fp = fopen("bytes.bin", "wb");
+    fwrite(*bytes, 1, acc, fp);
+    fclose(fp);
+    }
+    {
+    FILE *fp = fopen("packed.bin", "wb");
+    fwrite(pod.packed_bytes, 1, pod.n_packed_bytes, fp);
+    fclose(fp);
+    }
+}
+
+// TODO: move thins to somewhere else
+compressed_octree_t bytes_to_compressed_octree_t(uint8_t* data, uint64_t n_packed)
+{
+
+#define stof(X) sizeof(typeof(X))
+#define stofp(X) sizeof(typeof(*(X)))
+#define printacc std::cout << "acc: " << acc << std::endl
+
+  ptrdiff_t acc = 0;
+
+  compressed_octree_t pod;
+
+  pod.n_root_dims = *(uint8_t*)(data+acc);
+  acc = acc + stof(pod.n_root_dims);
+
+  printacc;
+
+  assert(pod.n_root_dims<=MAX_ROOT_DIMS && "Dimension of data is greater than MAX_ROOT_DIMS");
+
+  for (int k = 0; k<pod.n_root_dims; ++k) {
+    pod.root_dims[k] = *(uint32_t*)(data+acc);
+    acc += stofp(pod.root_dims);
+  }
+  printacc;
+
+  pod.n_packed_bytes = *(uint64_t*)(data+acc);
+  acc = acc+stof(pod.n_packed_bytes);
+  printacc;
+
+  pod.packed_bytes = (uint8_t*)(data+acc);
+  acc = acc+pod.n_packed_bytes*stofp(pod.packed_bytes);
+  printacc;
+
+  pod.n_serialized = *(uint64_t*)(data+acc);
+  acc = acc+sizeof(uint64_t);
+  printacc;
+
+  pod.n_leaf_coordinates = *(uint32_t*)(data+acc);
+  acc = acc+sizeof(typeof(pod.n_leaf_coordinates));
+  printacc;
+
+  pod.leaf_coordinates = (ATOMIC_OCTREE_COORDINATE_DTYPE*)(data+acc);
+  acc = acc + pod.n_leaf_coordinates*stofp(pod.leaf_coordinates);
+  printacc;
+
+  pod.leaf_levels = (uint8_t*)(data+acc);
+  acc = acc + pod.n_leaf_coordinates*stofp(pod.leaf_levels);
+  printacc;
+
+  pod.core_size = *(uint64_t*)(data+acc);
+  acc = acc+sizeof(typeof(pod.core_size));
+  printacc;
+
+  pod.bytes_per_leaf_coordinate = *(uint8_t*)(data+acc);
+  acc = acc + sizeof(uint8_t);
+  printacc;
+
+  pod.core_scale = *(VDF_REAL_DTYPE*)(data+acc);
+  acc = acc + sizeof(VDF_REAL_DTYPE);
+  printacc;
+
+  assert(pod.bytes_per_leaf_coordinate == sizeof(ATOMIC_OCTREE_COORDINATE_DTYPE) && "Invalid bytes per leaf coordinate");
+
+  // This shouldn't be done..
+  /* pod.packed_bytes = new uint8_t[pod.n_packed_bytes]; */
+
+  assert(n_packed == acc && "n_packed and number of bytes read does not match");
+
+  std::cout << "AFTER DESERIALIZATION:\n";
+  print_compressed_octree_t(pod);
+  return pod;
+#undef stof
+#undef stofp
+#undef printac
+}
+
   /* TODO: 
    * - [ ] what happens when data is zero. Then residual should be immediately under tolerance!
    * - [ ] return pointer to packed buffer and some lengths */
