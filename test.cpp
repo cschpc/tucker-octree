@@ -118,6 +118,122 @@ namespace octree_test {
 #endif
   }
 
+
+#if 0
+  template<typename UI>
+    void test_img(size_t maxiter, UI Nx, UI Ny) {
+      using namespace Eigen;
+      using namespace std;
+      const size_t core_rank = 2;
+      auto datatensor = Tensor<double, 2, ColMajor>(Nx,Ny);
+      indexrange<UI, 2> K({0,0,0},{UI(Nx-1),UI(Ny-1)});
+
+
+      auto tree = leaf<indexrange<UI,2>,2>();
+      tree.data = K;
+
+      /* divide_leaf(tree); */
+      UI big_N = MAX(Nx, Ny);
+      auto f = [&](int I) {return M_PIf64*(I+1)/big_N;};
+      auto F = [&](int I1, int I2) {return exp(-pow((I1+I2)/(big_N),2))*sin(M_PIf64*(I1+I2+1)/(2*big_N));};
+
+      auto view = TensorView<double,UI,2>(datatensor, K);
+      for (int i1 = 0; i1<view.size(0); i1++) {
+        for (int i2 = 0; i2<view.size(1); i2++) {
+            view(i1,i2) = F(i1,i2);
+          }}
+
+      std::stack<unique_ptr<Tucker<double,UI,core_rank,2>>> tuck_stack;
+      std::vector<unique_ptr<Tucker<double,UI,core_rank,2>>> tuckers;
+
+      for(int iter=0; iter<maxiter; iter++) {
+        cout << "iter: " << iter << " sqnorm of view " << view.sqnorm() << "\t\t|  ";
+        double residual = -1.0;
+
+        // find worst leaf
+        leaf<indexrange<UI,2>,2>* worst_leaf;
+        for (auto it = tree.begin(); it != tree.end(); ++it) {
+          auto& leaf = *it;
+          auto c_view = TensorView<double, UI, 2>(datatensor, leaf.data);
+          double c_residual = c_view.get_residual();
+          if (c_residual > residual) {
+            residual = c_residual;
+            worst_leaf = &leaf;
+          }
+        };
+
+        // improve worst leaf
+        cout << "worst leaf: " << worst_leaf->level << " : "<<  worst_leaf->data << " residual: " << residual;
+        divide_leaf(*worst_leaf);
+
+        std::unique_ptr<TensorView<double,UI,2>> c_view(new TensorView<double,UI,2>(datatensor, worst_leaf->data));
+        std::unique_ptr<Tucker<double, UI, core_rank, 2>> tuck(new Tucker<double,UI,core_rank,2>(std::move(c_view))); /* TODO: save tucker to leaf! */
+        tuck->fill_residual();
+
+        OctreeCoordinates<2> worst_coords = leaf_to_coordinates(*worst_leaf);
+        uint32_t atomic_coords = worst_coords.template toAtomic<uint32_t>();
+        cout << "\t|  worst_coords: " << worst_coords <<":"<<atomic_coords<< ":" 
+          << OctreeCoordinates<2>(worst_coords.template toAtomic<uint32_t>(), worst_leaf->level) 
+          << " inds: " << K.getsubrange(worst_coords) << endl;
+
+
+        tuck->setCoordinates(worst_coords);
+        /* tuck_stack.push(std::move(tuck)); */
+        tuckers.push_back(std::move(tuck));
+        /* delete c_view; */
+      }
+
+      cout << "residual sqnorm: " << view.sqnorm() << std::endl;
+
+      view.fill(double(0));
+
+      for (auto& it : tuckers) {
+        auto& tuck = *(it);
+        tuck.fill_residual(double(1), double(1));
+      }
+
+      auto serialized = SerialTucker<double, UI, core_rank, 3, uint32_t>(tuckers, K);
+      compressed_octree_t pod;
+      pod = serialized.to_pod();
+      uint8_t* bytes;
+      uint64_t n_bytes;
+      compressed_octree_t_to_bytes(pod, &bytes, &n_bytes);
+
+        {
+        FILE *fp = fopen("bytes_test.bin", "wb");
+        fwrite(bytes, 1, n_bytes, fp);
+        fclose(fp);
+        }
+
+      auto repod = bytes_to_compressed_octree_t(bytes, n_bytes);
+
+      if (settings::outfile.length() > 0) {
+        std::ofstream(settings::outfile, ios::trunc) << serialized;
+      } else {
+        cout << serialized;
+      }
+
+      /* auto detuckers = */ 
+      /* auto detuckers_old = serialized.Deserialize(); */
+      auto detuckers = Deserialize<double, UI, core_rank, 3>(repod);
+
+      view.fill(double(0));
+
+      for (auto&& tuck : detuckers) {
+        tuck->fill_residual(view, double(1), double(1));
+      }
+
+      cout << "reconstructed sqnorm: " << view.sqnorm() << std::endl;
+      for (int i1 = 0; i1<view.size(0); i1++) {
+        for (int i2 = 0; i2<view.size(1); i2++) {
+          for (int i3 = 0; i3<view.size(2); i3++) {
+            view(i1,i2,i3) = view(i1,i2,i3) - F(i1,i2,i3);
+          }}}
+      cout << "final reconstruction error sqnorm: " << view.sqnorm() << std::endl;
+
+    }
+#endif
+
   template<typename UI>
     void test_tree(size_t maxiter, UI Nx, UI Ny, UI Nz) {
       using namespace Eigen;
@@ -286,6 +402,7 @@ int main(int argc, const char** argv) {
     vector<uint16_t> &normaltest = kwarg("n,normalsizes", "Size of normal-vector product tensor").set_default("0,0,0");
     vector<size_t> &treetest = kwarg("T,tree", "Test octree + tucker. Param: maxiter, Nx,Ny,Nz ").set_default("0,4,4,4");
     string& outfile = kwarg("o,outfile", "Output structured data to this file.").set_default("");
+    vector<size_t> &imgtest = kwarg("I,img", "Test with 2d data. Param: maxiter, Nx, Ny").set_default("0,0,0");
   };
 
 
@@ -297,6 +414,7 @@ int main(int argc, const char** argv) {
   auto normalsize = args.normaltest;
   auto tuckersize = args.tucker;
   auto treeparam = args.treetest;
+  auto imgparam = args.imgtest;
 
   octree_test::settings::outfile = args.outfile;
 
@@ -310,5 +428,9 @@ int main(int argc, const char** argv) {
 
   cout << "\ntesting tree next\n";
   if (treeparam[0] > 0) test_tree(treeparam[0], treeparam[1], treeparam[2], treeparam[3]);
+
+#if 0
+  if (imgparam[0] > 0) test_img(imgparam[0], imgparam[1], imgparam[2]);
+#endif
 
 }

@@ -5,5 +5,6 @@
 #cmakedefine OCTREE_TUCKER_CORE_RANK @OCTREE_TUCKER_CORE_RANK@
 #cmakedefine MAX_ROOT_DIMS
 #cmakedefine OCTREE_VIEW_INDEX_TYPE
+#cmakedefine OCTREE_RANGE_CHECK
 
 #endif // CONFIG_H

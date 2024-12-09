@@ -70,6 +70,7 @@ private:
   arr a;
   arr b;
   std::array<std::array<size_t, N>,N> Jk;
+  size_t mindim = 3;
 
   void setJk() {
     for (size_t mode = 0; mode < N; mode++) {
@@ -95,14 +96,34 @@ private:
 
   }
 
+
+  template<typename ...Ts>
+  bool checkrange_(size_t p, T head, Ts ...rest) {
+    if ( (head > this->b[p]) || (head < this->a[p])) return false;
+    return checkrange(p+1, rest...);
+  }
+
+  bool checkrange_(size_t p, T head) {
+    if ( (head > this->b[p]) || (head < this->a[p])) return false;
+    return true;
+  }
+
 public:
 
   indexrange<T,N>() {}
   indexrange<T,N>(arr &aa, arr &bb) : a(aa), b(bb) {this->setJk();}
   indexrange<T,N>(arr &&aa, arr &&bb) : a(aa), b(bb) {this->setJk();}
 
+  template<typename ...Ts>
+  bool checkrange(Ts ...rest) {
+    return checkrange_(0, rest...);
+  }
+
   std::tuple<T, T> operator()(size_t i) const { return std::make_tuple(this->a[i], this->b[i]); }
   std::tuple<T, T> operator[](size_t i) const { return std::make_tuple(this->a[i], this->b[i]); }
+
+  void set_mindim(size_t mindim) { this->mindim = mindim; }
+  size_t get_mindim(size_t mindim)  { return this->mindim; }
 
   template<typename M1, typename ...M>
     size_t get_J(uint8_t mode, uint8_t p, M1 head, M ...rest) const {
@@ -122,10 +143,10 @@ public:
   indexrange<T, N> divide(uint8_t subcube) {
     indexrange<T, N> D(this->a, this->b);
     T two(2);
-    T one(1); // TODO: calculate correct remainder, if T is a floating point type, one should be 0!
+    T one(1);
     for(uint8_t dim=0; dim < 3; dim++) {
 
-      if (this->size(dim) > 3) { // TODO: 3 is magic number related to core_size
+      if (this->size(dim) > this->mindim) { 
         if (subcube & (1 << dim)) { 
           D.a[dim] = this->a[dim] + (this->b[dim]-this->a[dim])/two + one;
           D.b[dim] = this->b[dim];
@@ -245,9 +266,16 @@ public:
 
   indexrange<L,N>& getIndexrange() { return this->I; }
 
-  // TODO: iterator over elements so we wouldn't need always do std::enable_if_t
-  
-  template<size_t N_ = N, std::enable_if_t<N_==3,int> = 0, typename... Ts>
+  template<size_t N_ = N, std::enable_if_t<N_==2,int> = 0, typename ...Ts>
+    void fill(T x) {
+      for (size_t i2 = 0; i2 < this->size(1); i2++) 
+      for (size_t i1 = 0; i1 < this->size(0); i1++) 
+        {
+        (*this)(i1,i2) = x;
+        }
+    }
+
+  template<size_t N_ = N, std::enable_if_t<N_==3,int> = 0, typename ...Ts> // ok
     void fill(T x) {
       for (size_t i3 = 0; i3 < this->size(2); i3++) 
       for (size_t i2 = 0; i2 < this->size(1); i2++) 
@@ -257,7 +285,25 @@ public:
         }
     }
 
-  template<size_t N_ = N, std::enable_if_t<N_==3,int> = 0, typename... Ts>
+  template<size_t N_ = N, std::enable_if_t<N_==2,int> = 0, typename ...Ts>
+    T get_residual() {
+
+      if (this->residual > 0) return this->residual;
+
+      auto MAX = [](T a,T b) { 
+        /* return a*a + b; */
+        return a > b ? a : b; 
+      };
+      T acc = T(0);
+      for (size_t i2 = 0; i2 < this->size(1); i2++) 
+      for (size_t i1 = 0; i1 < this->size(0); i1++) 
+        {
+        acc = MAX(abs((*this)(i1,i2)), acc);
+        }
+    return acc;
+    }
+
+  template<size_t N_ = N, std::enable_if_t<N_==3,int> = 0, typename ...Ts> // ok
     T get_residual() {
 
       if (this->residual > 0) return this->residual;
@@ -281,7 +327,18 @@ public:
     return 1 + this->get_J_(mode, 0, rest...);
   }
 
-  template<size_t N_ = N, std::enable_if_t<N_==3,int> = 0, typename... Ts>
+  template<size_t N_ = N, std::enable_if_t<N_==2,int> = 0, typename... Ts>
+  T sqnorm() {
+    T acc = T(0);
+    for (size_t i2 = 0; i2 < this->size(1); i2++) 
+    for (size_t i1 = 0; i1 < this->size(0); i1++) 
+      {
+      acc = acc +((*this)(i1,i2))*((*this)(i1,i2));
+      }
+  return acc;
+  }
+
+  template<size_t N_ = N, std::enable_if_t<N_==3,int> = 0, typename... Ts> // ok
   T sqnorm() {
     T acc = T(0);
     for (size_t i3 = 0; i3 < this->size(2); i3++) 
@@ -293,51 +350,66 @@ public:
   return acc;
   }
 
-  const std::array<L,N>& getA() const {
-    std::cerr << "we shouldn't be here (TensorView::getB)";
-    exit(1);
-    return this->I.getA();
-  }
-
-  const std::array<L,N>& getB() const {
-    std::cerr << "we shouldn't be here (TensorView::getA)";
-    exit(1);
-    return this->I.getB();
-  }
 
   template<typename T_, size_t N_>
   friend std::ostream& operator <<(std::ostream &o, const indexrange<T_, N_> R);
 
   template<size_t N_ = N, std::enable_if_t<N_==2,int> = 0, typename... Ts>
-  T& operator() (Ts... K) {
-#ifdef RANGE_CHECK // TODO: implement range check for indexrange
-    I.checkrange(i,j,k);
-#endif
+  T operator() (Ts... K) const {
     auto Ktpl = std::make_tuple(K...);
+#ifdef OCTREE_RANGE_CHECK
+    auto i = std::get<0>(this->I(0)) + std::get<0>(Ktpl);
+    auto j = std::get<0>(this->I(1)) + std::get<1>(Ktpl);
+    assert(i < this->datatensor.size(0) && "Incorrect dimension");
+    assert(j < this->datatensor.size(1) && "Incorrect dimension");
+#endif
+
+    return (this->datatensor)(std::get<0>(this->I(0)) + std::get<0>(Ktpl),
+                              std::get<0>(this->I(1)) + std::get<1>(Ktpl));
+  }
+
+  template<size_t N_ = N, std::enable_if_t<N_==2,int> = 0, typename... Ts>
+  T& operator() (Ts... K) {
+    auto Ktpl = std::make_tuple(K...);
+#ifdef OCTREE_RANGE_CHECK 
+    auto i = std::get<0>(this->I(0)) + std::get<0>(Ktpl);
+    auto j = std::get<0>(this->I(1)) + std::get<1>(Ktpl);
+    assert(i < this->datatensor.size(0) && "Incorrect dimension");
+    assert(j < this->datatensor.size(1) && "Incorrect dimension");
+#endif
     return this->datatensor(std::get<0>(this->I[0]) + std::get<0>(Ktpl),
                             std::get<0>(this->I[1]) + std::get<1>(Ktpl));
   }
 
-  template<size_t N_ = N, std::enable_if_t<N_==3,int> = 0, typename... Ts>
+  template<size_t N_ = N, std::enable_if_t<N_==3,int> = 0, typename... Ts> // ok
   T operator() (Ts... K) const {
-#ifdef RANGE_CHECK
-    I.checkrange(i,j,k);
-#endif
     auto Ktpl = std::make_tuple(K...);
+#ifdef OCTREE_RANGE_CHECK
+    auto i = std::get<0>(this->I(0)) + std::get<0>(Ktpl);
+    auto j = std::get<0>(this->I(1)) + std::get<1>(Ktpl);
+    auto k = std::get<0>(this->I(2)) + std::get<2>(Ktpl);
+    assert(i < this->datatensor.size(0) && "Incorrect dimension");
+    assert(j < this->datatensor.size(1) && "Incorrect dimension");
+    assert(k < this->datatensor.size(2) && "Incorrect dimension");
+#endif
 
     return (this->datatensor)(std::get<0>(this->I(0)) + std::get<0>(Ktpl),
                         std::get<0>(this->I(1)) + std::get<1>(Ktpl),
                         std::get<0>(this->I(2)) + std::get<2>(Ktpl));
   }
-/* #endif */
 
   template<size_t N_ = N, std::enable_if_t<N_==3,int> = 0, typename... Ts>
   T& operator() (Ts... K) {
-#ifdef RANGE_CHECK
-    I.checkrange(i,j,k);
-#endif
     auto Ktpl = std::make_tuple(K...);
 
+#ifdef OCTREE_RANGE_CHECK
+    auto i = std::get<0>(this->I(0)) + std::get<0>(Ktpl);
+    auto j = std::get<0>(this->I(1)) + std::get<1>(Ktpl);
+    auto k = std::get<0>(this->I(2)) + std::get<2>(Ktpl);
+    assert(i < this->datatensor.size(0) && "Incorrect dimension");
+    assert(j < this->datatensor.size(1) && "Incorrect dimension");
+    assert(k < this->datatensor.size(2) && "Incorrect dimension");
+#endif
     return (this->datatensor)(std::get<0>(this->I(0)) + std::get<0>(Ktpl),
                         std::get<0>(this->I(1)) + std::get<1>(Ktpl),
                         std::get<0>(this->I(2)) + std::get<2>(Ktpl));
@@ -500,11 +572,68 @@ void fold_tensor_vector_prod(const TensorView<T,L,3>& A, uint8_t mode,
  }
 }
 
-template <typename T, typename L>
-void fold_tensor_vector_prod(const TensorView<T,L,3>& A, const uint8_t mode,
+template <typename T, typename L, size_t N>
+void fold_tensor_vector_prod(const TensorView<T,L,N>& A, const uint8_t mode,
                              const T* x_in, T* y_out, T* work) {
 
   fold_tensor_vector_prod(A, mode, x_in, y_out, work, T(1));
+
+}
+
+template <typename T, typename L>
+void fold_tensor_vector_prod(const TensorView<T,L,2>& A, const uint8_t mode,
+                             const T* x_in, T* y_out, T* work, T scale)
+{
+  using namespace std;
+  assertm(mode >= 0 && mode <=1, "Invalid fold mode");
+  array<size_t,2> len = {A.size(0), A.size(1)};
+  size_t colen = A.cosize(mode);
+
+  for (size_t i = 0; i<colen; i++) work[i] = T(0);
+  for (size_t i = 0; i<len[mode]; i++) y_out[i] = T(0);
+
+  size_t J, I;
+
+  switch(mode){
+    case 0:
+        for (size_t i = 0; i < len[0]; i++) {
+            for (size_t j = 0; j < len[1]; j++) {
+            J = A.get_J((uint8_t) mode, i+1,j+1)-1;
+            I = i;
+            work[J] = work[J] + A(i,j)*x_in[I]*scale;
+          }}
+      break;
+
+    case 1:
+        for (size_t j = 0; j < len[1]; j++) {
+          for (size_t i = 0; i < len[0]; i++) {
+            J = A.get_J((uint8_t) mode, i+1,j+1)-1;
+            I = j;
+            work[J] = work[J] + A(i,j)*x_in[I]*scale;
+          }}
+      break;
+  }
+
+  switch(mode) {
+    case 0:
+      for (size_t j = 0; j < len[1]; j++) {
+        for (size_t i = 0; i < len[0]; i++) {
+          J = A.get_J(mode, i+1,j+1)-1;
+          I = i; 
+          y_out[I] = y_out[I] + A(i,j)*work[J]*scale;
+        }}
+      break;
+
+    case 1:
+      for (size_t j = 0; j < len[1]; j++) {
+        for (size_t i = 0; i < len[0]; i++) {
+          J = A.get_J(mode, i+1,j+1)-1;
+          I = j; 
+          y_out[I] = y_out[I] + A(i,j)*work[J]*scale;
+        }}
+      break;
+
+  }
 
 }
 
@@ -755,7 +884,32 @@ public:
     this->init();
   }
 
-  template<size_t N_ = N, std::enable_if_t<N_==3,int> = 0>
+  template<size_t N_ = N, std::enable_if_t<N_==2,int> = 0>
+  void make_core() {
+    this->core.resize(core_rank, core_rank, core_rank);
+
+  TensorView<T,L,N>& view = *(this->view_ptr);
+  for(size_t j2 = 0; j2<core_rank; j2++) {
+    for(size_t j1 = 0; j1<core_rank; j1++) {
+      core(j1,j2) = T(0);
+    }}
+
+    for(size_t j1 = 0; j1<core_rank; j1++)
+    for(size_t j2 = 0; j2<core_rank; j2++)
+      {
+      for(size_t i1 = 0; i1<view.size(0); i1++) // TODO: correct ranges
+      for(size_t i2 = 0; i2<view.size(1); i2++)
+        {
+        this->core(j1,j2) = this->core(j1,j2) + 
+          (view(i1,i2))*
+          (this->factors[0](i1,j1))*
+          (this->factors[1](i2,j2));
+
+        }
+      }
+  }
+
+  template<size_t N_ = N, std::enable_if_t<N_==3,int> = 0> // ok
   void make_core() {
     this->core.resize(core_rank, core_rank, core_rank);
 
@@ -784,13 +938,33 @@ public:
       }
   }
 
-  template<size_t N_ = N, std::enable_if_t<N_==3,int> = 0>
+  /* template<size_t N_ = N, std::enable_if_t<N_==3,int> = 0> */
   void fill_residual() {
     /* No scaling here, core is computed via projections with factors! */
     this->fill_residual(VDF_REAL_DTYPE(1), VDF_REAL_DTYPE(-1)); 
   }
 
-  template<size_t N_ = N, std::enable_if_t<N_==3,int> = 0>
+  template<size_t N_ = N, std::enable_if_t<N_==2,int> = 0>
+  void fill_residual(TensorView<T,L,N>& main_view, const VDF_REAL_DTYPE mult_orig, const VDF_REAL_DTYPE mult_corr) {
+    auto view = main_view;
+    view.setIndexrange(view.getIndexrange().getsubrange(this->coordinates));
+
+    for(size_t i1 = 0; i1 < view.size(0); i1++)
+    for(size_t i2 = 0; i2 < view.size(1); i2++) {
+      T acc = T(0);
+      for(size_t j1 = 0; j1 < core_rank; j1++)
+      for(size_t j2 = 0; j2 < core_rank; j2++) {
+        acc = acc + 
+          this->core(j1,j2)*
+          this->factors[0](i1,j1)*
+          this->factors[1](i2,j2);
+      }
+    view(i1,i2) = mult_orig*view(i1,i2) + mult_corr*acc;
+    }
+
+  }
+
+  template<size_t N_ = N, std::enable_if_t<N_==3,int> = 0> // ok
   void fill_residual(TensorView<T,L,N>& main_view, const VDF_REAL_DTYPE mult_orig, const VDF_REAL_DTYPE mult_corr) {
     auto view = main_view;
     view.setIndexrange(view.getIndexrange().getsubrange(this->coordinates));
@@ -814,30 +988,31 @@ public:
   }
 
   /* Warning! Mutates the view contents! */
-  template<size_t N_ = N, std::enable_if_t<N_==3,int> = 0>
+  /* template<size_t N_ = N, std::enable_if_t<N_==3,int> = 0> */
   void fill_residual(const VDF_REAL_DTYPE mult_orig, const VDF_REAL_DTYPE mult_corr) {
 
   TensorView<T,L,N>& view = *(this->view_ptr);
+  this->fill_residual(view, mult_orig, mult_corr);
 
-    for(size_t i1 = 0; i1 < view.size(0); i1++)
-    for(size_t i2 = 0; i2 < view.size(1); i2++)
-    for(size_t i3 = 0; i3 < view.size(2); i3++) {
-      T acc = T(0);
-      for(size_t j1 = 0; j1 < core_rank; j1++)
-      for(size_t j2 = 0; j2 < core_rank; j2++)
-      for(size_t j3 = 0; j3 < core_rank; j3++) {
-        acc = acc + 
-          this->core(j1,j2,j3)*
-          this->factors[0](i1,j1)*
-          this->factors[1](i2,j2)*
-          this->factors[2](i3,j3);
-      }
-    view(i1,i2,i3) = mult_orig*view(i1,i2,i3) + mult_corr*acc;
-    }
+    /* for(size_t i1 = 0; i1 < view.size(0); i1++) */
+    /* for(size_t i2 = 0; i2 < view.size(1); i2++) */
+    /* for(size_t i3 = 0; i3 < view.size(2); i3++) { */
+    /*   T acc = T(0); */
+    /*   for(size_t j1 = 0; j1 < core_rank; j1++) */
+    /*   for(size_t j2 = 0; j2 < core_rank; j2++) */
+    /*   for(size_t j3 = 0; j3 < core_rank; j3++) { */
+    /*     acc = acc + */ 
+    /*       this->core(j1,j2,j3)* */
+    /*       this->factors[0](i1,j1)* */
+    /*       this->factors[1](i2,j2)* */
+    /*       this->factors[2](i3,j3); */
+    /*   } */
+    /* view(i1,i2,i3) = mult_orig*view(i1,i2,i3) + mult_corr*acc; */
+    /* } */
   }
 
 private: 
-  void init() {
+  void init() noexcept {
     auto& view = *(this->view_ptr);
 
     /* TODO: Spectra might struggle finding eigenspaces of big linear ops (300x300 is too big?!)*/
@@ -856,7 +1031,8 @@ private:
 
     for (size_t mode=0; mode<N; mode++) {
       op.setMode(mode);
-      SymEigsSolver<NormalFoldProd<T, L, N>> eigs(op, core_rank, MAX(view.size(mode)/10, MIN(core_rank+5, view.size(mode))) );
+      try {
+        SymEigsSolver<NormalFoldProd<T, L, N>> eigs(op, core_rank, MAX(view.size(mode)/10, MIN(core_rank+5, view.size(mode))) );
       eigs.init();
 
       int nconv = eigs.compute(SortRule::LargestMagn);
@@ -871,10 +1047,13 @@ private:
       this->factors[mode] = eigenvectors;
 
 
-      auto normi = eigenvectors.norm();
 #if TUCKER_DEBUG
+      auto normi = eigenvectors.norm();
       std::cout << "sq-norm of eigenvectors " << normi*normi << std::endl;
 #endif
+      } catch (std::runtime_error E) {
+        std::cout << E.what() << std::endl;
+      }
     }
     
     this->make_core();
@@ -941,7 +1120,7 @@ public:
   // Empty constructor
   
   SerialTucker() {};
-  template<size_t N_ = N, std::enable_if_t<N_==3,int> = 0>
+  /* template<size_t N_ = N, std::enable_if_t<N_==3,int> = 0> */
   SerialTucker(std::vector<uptr>& tuckers, indexrange<L,N> root_range) : root_range(root_range) {
     using namespace std;
 
@@ -1002,7 +1181,7 @@ public:
 
 /* TODO: 
  * - [ ] move Deserialize outside SerialTucker and give all data explicitly in arguments */
-  template<size_t N_ = N, std::enable_if_t<N_==3,int> = 0>
+  /* template<size_t N_ = N, std::enable_if_t<N_==3,int> = 0> */
   /* void */ 
   std::vector<std::unique_ptr<Tucker<T,L,core_rank,N>>> Deserialize() {
     using namespace Eigen;
@@ -1040,20 +1219,25 @@ public:
 
       indexrange<L, N> leaf_inds = this->root_range.getsubrange(o_coords);
 
-      const std::array<size_t,3> FL = {
-        leaf_inds.size(0),
-        leaf_inds.size(1),
-        leaf_inds.size(2)};
+      std::array<size_t,N> FL;
+      for (int i = 0; i < N; ++i) FL[i] = leaf_inds.size(i);
 
 #if VERBOSE_DEBUG
       for (auto& it : FL) cout << "FL: " << it << endl;
 #endif
 
-      factorss.push_back({
-                         Map<Matrix<T, Dynamic, core_rank>>(data                           , FL[0], core_rank),
-                         Map<Matrix<T, Dynamic, core_rank>>(data + FL[0]*core_rank         , FL[1], core_rank),
-                         Map<Matrix<T, Dynamic, core_rank>>(data + (FL[1]+FL[0])*core_rank , FL[2], core_rank)});
-      bias += (FL[0] + FL[1] + FL[2])*core_rank;
+      if(N==3) {
+        factorss.push_back({
+                           Map<Matrix<T, Dynamic, core_rank>>(data                           , FL[0], core_rank),
+                           Map<Matrix<T, Dynamic, core_rank>>(data + FL[0]*core_rank         , FL[1], core_rank),
+                           Map<Matrix<T, Dynamic, core_rank>>(data + (FL[1]+FL[0])*core_rank , FL[2], core_rank)});
+        bias += (FL[0] + FL[1] + FL[2])*core_rank;
+      } else if (N==2) {
+        factorss.push_back({
+                           Map<Matrix<T, Dynamic, core_rank>>(data                           , FL[0], core_rank),
+                           Map<Matrix<T, Dynamic, core_rank>>(data + FL[0]*core_rank         , FL[1], core_rank)});
+        bias += (FL[0] + FL[1])*core_rank;
+      }
     }
 
     // TODO: just one loop that does core, factors and coords
@@ -1128,7 +1312,6 @@ std::vector<std::unique_ptr<Tucker<T,L,core_rank,N>>> Deserialize(compressed_oct
   serializer.packed = vector<uint8_t>();
   serializer.packed.resize(pod.n_packed_bytes);
 
-#warning "memcpy looks dangerous here. Just do a for-loop?"
   memcpy(serializer.packed.data(), pod.packed_bytes, pod.n_packed_bytes);
 
   serializer.packed_size = pod.n_packed_bytes;
@@ -1142,10 +1325,8 @@ std::vector<std::unique_ptr<Tucker<T,L,core_rank,N>>> Deserialize(compressed_oct
   serializer.leaf_levels = vector<uint8_t>();
   serializer.leaf_levels.resize(pod.n_leaf_coordinates);
 
-#warning "memcpy looks dangerous here. Just do a for-loop?"
   memcpy(serializer.leaf_levels.data(), pod.leaf_levels, pod.n_leaf_coordinates);
 
-#warning "memcpy looks dangerous here. Just do a for-loop?"
   memcpy(serializer.leaf_coordinates.data(), pod.leaf_coordinates, pod.n_leaf_coordinates*sizeof(atomic_coord_type));
 
   serializer.core_size = pod.core_size;

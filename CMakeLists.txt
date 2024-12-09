@@ -50,6 +50,7 @@ endif(WITH_HIP)
 
 option(VERBOSE_DEBUG "Output verbose debugging messages" OFF)
 option(BRIEF_DEBUG "Output brief debugging messages" OFF)
+option(OCTREE_RANGE_CHECK "Check out of bounds accesses" OFF)
 
 set(VDF_REAL_DTYPE "float" CACHE STRING "Datatype of the dense input buffer")
 set(OCTREE_TUCKER_CORE_RANK 2 CACHE STRING "Tucker core dimension in one dimension")
