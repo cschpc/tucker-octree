@@ -20,7 +20,7 @@ std::vector<uint8_t> compress(T* array, size_t arraySize, size_t& compressedSize
    std::vector<uint8_t> compressedData(maxSize);
 
    // Initialize ZFP compression
-   zfp_stream_set_accuracy(zfp, 1e-5);
+   zfp_stream_set_accuracy(zfp, 1e-4);
    bitstream* stream = stream_open(compressedData.data(), compressedSize);
    zfp_stream_set_bit_stream(zfp, stream);
    zfp_stream_rewind(zfp);
@@ -42,7 +42,7 @@ std::vector<T> decompressArrayFloat(uint8_t* compressedData, size_t compressedSi
 
    // Initialize ZFP decompression
    zfp_stream* zfp = zfp_stream_open(NULL);
-   zfp_stream_set_accuracy(zfp, 1e-5);
+   zfp_stream_set_accuracy(zfp, 1e-4);
    bitstream* stream_decompress = stream_open(compressedData, compressedSize);
    zfp_stream_set_bit_stream(zfp, stream_decompress);
    zfp_stream_rewind(zfp);
