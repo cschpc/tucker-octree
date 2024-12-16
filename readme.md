@@ -1,4 +1,8 @@
-# Octree based multiresolution Tucker decomposition of dense 3-arrays
+# T-Octree voxel data compression library
+
+This *Tucker-Octree* (T-Octree) library compresses 3-dimensional dense datasets using octree
+multiresolution approach with Tucker decomposition. The collected core and
+factor matrices are further compressed with the ZFP library.
 
 ## Installation
 
