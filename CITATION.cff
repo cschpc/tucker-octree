@@ -4,7 +4,7 @@ authors:
 - family-names: "Kataja"
   given-names: "Juhani"
   orcid: "https://orcid.org/0000-0002-1212-0080"
-title: "Tucker-Octree compression library"
+title: "T-Octree compression library"
 version: 1.0.0
 date-released: 2024-12-16
 url: "https://github.com/juhanikataja/t-octree"

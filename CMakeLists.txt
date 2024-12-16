@@ -73,21 +73,3 @@ include_directories(${CMAKE_BINARY_DIR})
 install(TARGETS octree_compressor)
 INSTALL(FILES ${CMAKE_SOURCE_DIR}/octree_compressor.h ${CMAKE_BINARY_DIR}/config.h TYPE INCLUDE)
 
-
-# target_link_libraries(octree ${BLAS_LIBRARIES} ${LAPACK_LIBRARIES})
-
-
-# CMAKE_MINIMUM_REQUIRED(VERSION 3.16)
-# PROJECT(TuckerMPItest C CXX)
-
-# SET(TUCKER_MPI_SERIAL_ROOT "$ENV{TUCKER_MPI_SERIAL_ROOT}" CACHE PATH "")
-
-# SET(SOURCES tuckertest.cpp)
-
-# FIND_PACKAGE(BLAS REQUIRED)
-# FIND_PACKAGE(LAPACK REQUIRED)
-
-# add_executable(tuckertest ${SOURCES})
-# include_directories(${TUCKER_MPI_SERIAL_ROOT}/include)
-# target_link_libraries(tuckertest ${TUCKER_MPI_SERIAL_ROOT}/lib/libserial_tucker.a ${BLAS_LIBRARIES} ${LAPACK_LIBRARIES})
-
