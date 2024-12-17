@@ -39,4 +39,4 @@ include_directories(${CMAKE_SOURCE_DIR}/contrib/include)
 include_directories(${CMAKE_BINARY_DIR})
 
 install(TARGETS toctree_compressor)
-INSTALL(FILES ${CMAKE_SOURCE_DIR}/toctree_compressor.h ${CMAKE_BINARY_DIR}/config.h TYPE INCLUDE)
+INSTALL(FILES ${CMAKE_SOURCE_DIR}/toctree_compressor.h ${CMAKE_BINARY_DIR}/toctree_config.h TYPE INCLUDE)
