@@ -144,14 +144,14 @@ namespace toctree_test {
   }
 
 
-#if 0
+#if 1
   template<typename UI>
     void test_img(size_t maxiter, UI Nx, UI Ny) {
       using namespace Eigen;
       using namespace std;
       const size_t core_rank = 2;
       auto datatensor = Tensor<double, 2, ColMajor>(Nx,Ny);
-      indexrange<UI, 2> K({0,0,0},{UI(Nx-1),UI(Ny-1)});
+      indexrange<UI, 2> K({0,0},{UI(Nx-1),UI(Ny-1)});
 
 
       auto tree = leaf<indexrange<UI,2>,2>();
@@ -217,7 +217,7 @@ namespace toctree_test {
         tuck.fill_residual(double(1), double(1));
       }
 
-      auto serialized = SerialTucker<double, UI, core_rank, 3, uint32_t>(tuckers, K);
+      auto serialized = SerialTucker<double, UI, core_rank, 2, uint32_t>(tuckers, K);
       compressed_toctree_t pod;
       pod = serialized.to_pod();
       uint8_t* bytes;
@@ -240,7 +240,7 @@ namespace toctree_test {
 
       /* auto detuckers = */ 
       /* auto detuckers_old = serialized.Deserialize(); */
-      auto detuckers = Deserialize<double, UI, core_rank, 3>(repod);
+      auto detuckers = Deserialize<double, UI, core_rank, 2>(repod);
 
       view.fill(double(0));
 
@@ -251,9 +251,8 @@ namespace toctree_test {
       cout << "reconstructed sqnorm: " << view.sqnorm() << std::endl;
       for (int i1 = 0; i1<view.size(0); i1++) {
         for (int i2 = 0; i2<view.size(1); i2++) {
-          for (int i3 = 0; i3<view.size(2); i3++) {
-            view(i1,i2,i3) = view(i1,i2,i3) - F(i1,i2,i3);
-          }}}
+            view(i1,i2) = view(i1,i2) - F(i1,i2);
+          }}
       cout << "final reconstruction error sqnorm: " << view.sqnorm() << std::endl;
 
     }
@@ -451,11 +450,14 @@ int main(int argc, const char** argv) {
 
   if (tuckersize[0] > 0) test_tucker(tuckersize[0]);
 
-  cout << "\ntesting tree next\n";
-  if (treeparam[0] > 0) test_tree(treeparam[0], treeparam[1], treeparam[2], treeparam[3]);
+  
+  if (treeparam[0] > 0) {
+   cout << "\ntesting tree next\n";
+   test_tree(treeparam[0], treeparam[1], treeparam[2], treeparam[3]);
+  }
 
-#if 0
-  if (imgparam[0] > 0) test_img(imgparam[0], imgparam[1], imgparam[2]);
+#if 1
+  if (imgparam[0] > 0) test_img<uint32_t>(static_cast<uint32_t>(imgparam[0]), static_cast<uint32_t>(imgparam[1]), static_cast<uint32_t>(imgparam[2]));
 #endif
 
 }

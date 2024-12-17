@@ -1,6 +1,7 @@
 /*
  * Tucker-Octree multiresolution voxel data compression library
- * Copyright (C) 2024 CSC - IT Center for Science Ltd
+ * Copyright (C) 2024 CSC - IT Center for Science Ltd & University of Helsinki
+ *
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License

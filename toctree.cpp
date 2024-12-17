@@ -97,6 +97,7 @@ private:
   std::array<std::array<size_t, N>,N> Jk;
   size_t mindim = 3;
 
+
   void setJk() {
     for (size_t mode = 0; mode < N; mode++) {
       this->Jk[mode][0] = 0;
@@ -134,6 +135,14 @@ private:
   }
 
 public:
+
+  indexrange<T,N>(uint32_t D[N]) {
+    for (int n=0; n<N; ++n) {
+      this->a[n] = T(0);
+      this->b[n] = D[n]-1;
+    }
+    this->setJk();
+  }
 
   indexrange<T,N>() {}
   indexrange<T,N>(arr &aa, arr &bb) : a(aa), b(bb) {this->setJk();}
@@ -221,6 +230,23 @@ std::ostream& operator <<(std::ostream &o, const indexrange<T,N> R)
      if (dim < 2) o << "-";
   }
   return o;
+}
+
+template <typename T> 
+leaf<indexrange<T,2>,2>& divide_leaf(leaf<indexrange<T,2>,2> &root) 
+{
+
+  if (!(root.children == NULL)) return root;
+
+  root.children = new leaf<indexrange<T,2>,2>[root.n_children];
+  for(uint8_t lnum = 0; lnum<4; lnum++) {
+    root.children[lnum].data = root.data.divide(lnum);
+    root.children[lnum].level = root.level + size_t(1);
+    root.children[lnum].children = NULL;
+    root.children[lnum].coordinate = lnum;
+    root.children[lnum].parent = &root;
+  }
+  return root;
 }
 
 template <typename T> 
@@ -911,7 +937,7 @@ public:
 
   template<size_t N_ = N, std::enable_if_t<N_==2,int> = 0>
   void make_core() {
-    this->core.resize(core_rank, core_rank, core_rank);
+    this->core.resize(core_rank, core_rank);
 
   TensorView<T,L,N>& view = *(this->view_ptr);
   for(size_t j2 = 0; j2<core_rank; j2++) {
@@ -1204,6 +1230,22 @@ public:
     this->make_serialized_bytes();
   }
 
+
+  size_t pushfactors(std::vector<std::array<Eigen::Matrix<T,Eigen::Dynamic, core_rank>, 2>>& factors, std::array<size_t, 2>& FL, T* data) {
+    factors.push_back({
+                      Eigen::Map<Eigen::Matrix<T, Eigen::Dynamic, core_rank>>(data                           , FL[0], core_rank),
+                      Eigen::Map<Eigen::Matrix<T, Eigen::Dynamic, core_rank>>(data + FL[0]*core_rank         , FL[1], core_rank)});
+    return (FL[0] + FL[1])*core_rank;
+  }
+
+  size_t pushfactors(std::vector<std::array<Eigen::Matrix<T,Eigen::Dynamic, core_rank>, 3>>& factors, std::array<size_t, 3>& FL, T* data) {
+    factors.push_back({
+                      Eigen::Map<Eigen::Matrix<T, Eigen::Dynamic, core_rank>>(data                           , FL[0], core_rank),
+                      Eigen::Map<Eigen::Matrix<T, Eigen::Dynamic, core_rank>>(data + FL[0]*core_rank         , FL[1], core_rank),
+                      Eigen::Map<Eigen::Matrix<T, Eigen::Dynamic, core_rank>>(data + (FL[1]+FL[0])*core_rank , FL[2], core_rank)});
+    return (FL[0] + FL[1] + FL[2])*core_rank;
+  }
+
 /* TODO: 
  * - [ ] move Deserialize outside SerialTucker and give all data explicitly in arguments */
   /* template<size_t N_ = N, std::enable_if_t<N_==3,int> = 0> */
@@ -1229,7 +1271,8 @@ public:
 
     for (int m = 0; m < n_leaves; ++m) {
       T* data = this->serialized.data();
-      cores.push_back(TensorMap<Tensor<T,N>>(this->serialized.data()+m*n_per_core, core_rank, core_rank, core_rank));
+      if constexpr (N==3) cores.push_back(TensorMap<Tensor<T,N>>(this->serialized.data()+m*n_per_core, core_rank, core_rank, core_rank));
+      if constexpr (N==2) cores.push_back(TensorMap<Tensor<T,N>>(this->serialized.data()+m*n_per_core, core_rank, core_rank));
     }
     
     size_t bias = n_leaves*n_per_core;
@@ -1251,13 +1294,15 @@ public:
       for (auto& it : FL) cout << "FL: " << it << endl;
 #endif
 
-      if(N==3) {
+      /* bias += pushfactors(factorss, FL, data); */
+
+      if constexpr (N==3) {
         factorss.push_back({
                            Map<Matrix<T, Dynamic, core_rank>>(data                           , FL[0], core_rank),
                            Map<Matrix<T, Dynamic, core_rank>>(data + FL[0]*core_rank         , FL[1], core_rank),
                            Map<Matrix<T, Dynamic, core_rank>>(data + (FL[1]+FL[0])*core_rank , FL[2], core_rank)});
         bias += (FL[0] + FL[1] + FL[2])*core_rank;
-      } else if (N==2) {
+      } else if constexpr (N==2) {
         factorss.push_back({
                            Map<Matrix<T, Dynamic, core_rank>>(data                           , FL[0], core_rank),
                            Map<Matrix<T, Dynamic, core_rank>>(data + FL[0]*core_rank         , FL[1], core_rank)});
@@ -1358,26 +1403,21 @@ std::vector<std::unique_ptr<Tucker<T,L,core_rank,N>>> Deserialize(compressed_toc
   serializer.core_scale = pod.core_scale;
 
   uint32_t Nx, Ny, Nz;
-  switch(N){
-    case 3:
+
+  if constexpr(N==3) {
     Nx = pod.root_dims[0];
     Ny = pod.root_dims[1];
     Nz = pod.root_dims[2];
-    serializer.root_range = indexrange<L,N>({0,0,0},{Nx-1,Ny-1,Nz-1});
-    break;
+    serializer.root_range = indexrange<L,3>({0,0,0},{Nx-1,Ny-1,Nz-1});
+  }
 
-    case 2:
+  if constexpr(N==2) {
     Nx = pod.root_dims[0];
     Ny = pod.root_dims[1];
-    serializer.root_range = indexrange<L,N>({0,0},{Nx-1,Ny-1});
-    cout << "Warning: dimension 2 is not fully supported\n";
-    exit(0);
-    break;
-
-    default:
-    assert( (N!=2 && N!=3) && "Incompatible dimension requested" );
-    break;
+    serializer.root_range = indexrange<L,2>({0,0},{Nx-1,Ny-1});
   }
+
+  static_assert( (N==2 || N==3) && "Incompatible dimension requested" );
 
   serializer.unmake_serialized_bytes();
   /* cout << "################################\n"; */
