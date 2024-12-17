@@ -1,4 +1,4 @@
-#include "octree.cpp"
+#include "toctree.cpp"
 #include <string>
 #include <fstream>
 #include <iostream>
@@ -7,7 +7,7 @@
 
 #include <argparse.hpp>
 
-namespace octree_test {
+namespace toctree_test {
 
   using namespace std;
   using namespace tree_compressor;
@@ -193,11 +193,11 @@ namespace octree_test {
       }
 
       auto serialized = SerialTucker<double, UI, core_rank, 3, uint32_t>(tuckers, K);
-      compressed_octree_t pod;
+      compressed_toctree_t pod;
       pod = serialized.to_pod();
       uint8_t* bytes;
       uint64_t n_bytes;
-      compressed_octree_t_to_bytes(pod, &bytes, &n_bytes);
+      compressed_toctree_t_to_bytes(pod, &bytes, &n_bytes);
 
         {
         FILE *fp = fopen("bytes_test.bin", "wb");
@@ -205,7 +205,7 @@ namespace octree_test {
         fclose(fp);
         }
 
-      auto repod = bytes_to_compressed_octree_t(bytes, n_bytes);
+      auto repod = bytes_to_compressed_toctree_t(bytes, n_bytes);
 
       if (settings::outfile.length() > 0) {
         std::ofstream(settings::outfile, ios::trunc) << serialized;
@@ -308,11 +308,11 @@ namespace octree_test {
       }
 
       auto serialized = SerialTucker<double, UI, core_rank, 3, uint32_t>(tuckers, K);
-      compressed_octree_t pod;
+      compressed_toctree_t pod;
       pod = serialized.to_pod();
       uint8_t* bytes;
       uint64_t n_bytes;
-      compressed_octree_t_to_bytes(pod, &bytes, &n_bytes);
+      compressed_toctree_t_to_bytes(pod, &bytes, &n_bytes);
 
         {
         FILE *fp = fopen("bytes_test.bin", "wb");
@@ -320,7 +320,7 @@ namespace octree_test {
         fclose(fp);
         }
 
-      auto repod = bytes_to_compressed_octree_t(bytes, n_bytes);
+      auto repod = bytes_to_compressed_toctree_t(bytes, n_bytes);
 
       if (settings::outfile.length() > 0) {
         std::ofstream(settings::outfile, ios::trunc) << serialized;
@@ -392,7 +392,7 @@ int main(int argc, const char** argv) {
   using namespace std;
   using namespace Eigen;
   using namespace tree_compressor;
-  using namespace octree_test;
+  using namespace toctree_test;
 
   struct Myargs : public argparse::Args {
     vector<uint16_t> &tensorsizes = kwarg("b,benchmark", "Size of big tensor, size of current view, max size of view, increment").set_default("0,0,0,2");
@@ -400,7 +400,7 @@ int main(int argc, const char** argv) {
     bool &help = flag("h,help", "help");
     vector<int> &tucker = kwarg("t,tucker", "Test tucker functionality with given tensor size.").set_default("-1");
     vector<uint16_t> &normaltest = kwarg("n,normalsizes", "Size of normal-vector product tensor").set_default("0,0,0");
-    vector<size_t> &treetest = kwarg("T,tree", "Test octree + tucker. Param: maxiter, Nx,Ny,Nz ").set_default("0,4,4,4");
+    vector<size_t> &treetest = kwarg("T,tree", "Test toctree. Param: maxiter, Nx,Ny,Nz ").set_default("0,4,4,4");
     string& outfile = kwarg("o,outfile", "Output structured data to this file.").set_default("");
     vector<size_t> &imgtest = kwarg("I,img", "Test with 2d data. Param: maxiter, Nx, Ny").set_default("0,0,0");
   };
@@ -416,7 +416,7 @@ int main(int argc, const char** argv) {
   auto treeparam = args.treetest;
   auto imgparam = args.imgtest;
 
-  octree_test::settings::outfile = args.outfile;
+  toctree_test::settings::outfile = args.outfile;
 
   if (tensorsizes[0] > 0) test_tensorsizes(tensorsizes);
 

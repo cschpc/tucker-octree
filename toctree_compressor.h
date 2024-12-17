@@ -1,10 +1,10 @@
-#ifndef OCTREE_COMPRESSOR_H
-#define OCTREE_COMPRESSOR_H
+#ifndef TOCTREE_COMPRESSOR_H
+#define TOCTREE_COMPRESSOR_H
 
 #include <stdlib.h>
 #include <stdint.h>
 
-#include "config.h"
+#include "toctree_config.h"
 
 // TODO: generate a config.h file with VDF_REAL_DTYPE etc with cmake
 
@@ -47,24 +47,24 @@ typedef struct {
   uint64_t core_size;
   uint8_t bytes_per_leaf_coordinate;
   VDF_REAL_DTYPE core_scale;
-} compressed_octree_t;
+} compressed_toctree_t;
 
 
-void print_compressed_octree_t(compressed_octree_t pod);
+void print_compressed_toctree_t(compressed_toctree_t pod);
 
-void compressed_octree_t_to_bytes(compressed_octree_t pod, uint8_t **bytes, uint64_t* n_bytes);
+void compressed_toctree_t_to_bytes(compressed_toctree_t pod, uint8_t **bytes, uint64_t* n_bytes);
 
-compressed_octree_t bytes_to_compressed_octree_t(uint8_t* data, uint64_t n_packed);
+compressed_toctree_t bytes_to_compressed_toctree_t(uint8_t* data, uint64_t n_packed);
 
-void compress_with_octree_method_new(VDF_REAL_DTYPE* buffer, const size_t Nx, const size_t Ny, const size_t Nz, 
+void compress_with_toctree_method_new(VDF_REAL_DTYPE* buffer, const size_t Nx, const size_t Ny, const size_t Nz, 
                                      VDF_REAL_DTYPE tolerance, uint8_t* compressed);
 
-void compress_with_octree_method(VDF_REAL_DTYPE* buffer, 
+void compress_with_toctree_method(VDF_REAL_DTYPE* buffer, 
                                  const size_t Nx, const size_t Ny, const size_t Nz, 
                                  VDF_REAL_DTYPE tolerance, 
                                  uint8_t** serialized_buffer, uint64_t* serialized_buffer_size);
 
-void uncompress_with_octree_method(VDF_REAL_DTYPE* buffer, const size_t Nx, const size_t Ny, const size_t Nz,
+void uncompress_with_toctree_method(VDF_REAL_DTYPE* buffer, const size_t Nx, const size_t Ny, const size_t Nz,
                                    uint8_t* serialized_buffer, uint64_t serialized_buffer_size, bool clear_buffer);
 
 }

@@ -22,7 +22,7 @@
 #include "tree.hpp"
 
 extern "C" {
-#include "octree_compressor.h"
+#include "toctree_compressor.h"
 }
 
 
@@ -1071,12 +1071,12 @@ private:
 /* expose this to vlasiator */
 
 /* In testing */
-/* void compress_with_octree_method(VDF_REAL_DTYPE* buffer, const size_t Nx, const size_t Ny, const size_t Nz, */ 
+/* void compress_with_toctree_method(VDF_REAL_DTYPE* buffer, const size_t Nx, const size_t Ny, const size_t Nz, */ 
 /*                                  VDF_REAL_DTYPE tolerance, double& compression_ratio){}; */
 
 /* In production */
-/* void compress_with_octree(double* input_buffer, size_t Nx, ..., char* compressed); */
-/* void uncompress_with_octree(double* output_buffer, char* compressed); */
+/* void compress_with_toctree(double* input_buffer, size_t Nx, ..., char* compressed); */
+/* void uncompress_with_toctree(double* output_buffer, char* compressed); */
 
 template<typename T, typename L, size_t core_rank, size_t N, typename atomic_coord_type>
 struct SerialTucker {
@@ -1265,14 +1265,14 @@ public:
 
   
   template<typename T_, typename L_, size_t core_rank_, size_t N_>
-    friend std::vector<std::unique_ptr<Tucker<T_,L_,core_rank_,N_>>> Deserialize(compressed_octree_t);
+    friend std::vector<std::unique_ptr<Tucker<T_,L_,core_rank_,N_>>> Deserialize(compressed_toctree_t);
 
-  compressed_octree_t to_pod() {
+  compressed_toctree_t to_pod() {
 
     // TODO: allocate data to packed_bytes and leaf_coordinates and leaf_levels
     using namespace std;
 
-    compressed_octree_t pod;
+    compressed_toctree_t pod;
 
     assert(N<=MAX_ROOT_DIMS && "Dimension of data is greater than MAX_ROOT_DIMS");
 
@@ -1300,7 +1300,7 @@ public:
 };
 
 template<typename T, typename L, size_t core_rank, size_t N>
-std::vector<std::unique_ptr<Tucker<T,L,core_rank,N>>> Deserialize(compressed_octree_t pod) {
+std::vector<std::unique_ptr<Tucker<T,L,core_rank,N>>> Deserialize(compressed_toctree_t pod) {
 
   using namespace std;
   using atomic_coord_type = ATOMIC_OCTREE_COORDINATE_DTYPE;
@@ -1389,7 +1389,7 @@ std::ostream& operator <<(std::ostream &o, const SerialTucker<T_, L_, core_rank_
 
 extern "C" {
 
-void print_compressed_octree_t(compressed_octree_t pod)
+void print_compressed_toctree_t(compressed_toctree_t pod)
   {
 
   using namespace std;
@@ -1419,12 +1419,12 @@ void print_compressed_octree_t(compressed_octree_t pod)
   
 }
 
-void compressed_octree_t_to_bytes(compressed_octree_t pod, uint8_t **bytes, uint64_t* n_bytes)
+void compressed_toctree_t_to_bytes(compressed_toctree_t pod, uint8_t **bytes, uint64_t* n_bytes)
 {
 
   ptrdiff_t acc;
   /* std::cout << "BEFORE DESERIALIZATION:\n"; */
-  /* print_compressed_octree_t(pod); */
+  /* print_compressed_toctree_t(pod); */
 
 #define stof(X) sizeof(typeof(X))
 #define stofp(X) sizeof(typeof(*(X)))
@@ -1489,7 +1489,7 @@ void compressed_octree_t_to_bytes(compressed_octree_t pod, uint8_t **bytes, uint
 }
 
 // TODO: move thins to somewhere else
-compressed_octree_t bytes_to_compressed_octree_t(uint8_t* data, uint64_t n_packed)
+compressed_toctree_t bytes_to_compressed_toctree_t(uint8_t* data, uint64_t n_packed)
 {
 
 #define stof(X) sizeof(typeof(X))
@@ -1498,7 +1498,7 @@ compressed_octree_t bytes_to_compressed_octree_t(uint8_t* data, uint64_t n_packe
 
   ptrdiff_t acc = 0;
 
-  compressed_octree_t pod;
+  compressed_toctree_t pod;
 
   pod.n_root_dims = *(uint8_t*)(data+acc);
   acc = acc + stof(pod.n_root_dims);
@@ -1557,7 +1557,7 @@ compressed_octree_t bytes_to_compressed_octree_t(uint8_t* data, uint64_t n_packe
   assert(n_packed == acc && "n_packed and number of bytes read does not match");
 
   /* std::cout << "AFTER DESERIALIZATION:\n"; */
-  /* print_compressed_octree_t(pod); */
+  /* print_compressed_toctree_t(pod); */
   return pod;
 #undef stof
 #undef stofp
@@ -1567,7 +1567,7 @@ compressed_octree_t bytes_to_compressed_octree_t(uint8_t* data, uint64_t n_packe
   /* TODO: 
    * - [ ] what happens when data is zero. Then residual should be immediately under tolerance!
    * - [ ] return pointer to packed buffer and some lengths */
-  void compress_with_octree_method(VDF_REAL_DTYPE* buffer, 
+  void compress_with_toctree_method(VDF_REAL_DTYPE* buffer, 
                                    const size_t Nx, const size_t Ny, const size_t Nz, 
                                    VDF_REAL_DTYPE tolerance,
                                    uint8_t** serialized_buffer, 
@@ -1642,7 +1642,7 @@ compressed_octree_t bytes_to_compressed_octree_t(uint8_t* data, uint64_t n_packe
     auto serializer = SerialTucker<VDF_REAL_DTYPE, UI, OCTREE_TUCKER_CORE_RANK, 3, ATOMIC_OCTREE_COORDINATE_DTYPE>(tuckers, K);
     auto pod = serializer.to_pod();
 
-    compressed_octree_t_to_bytes(pod, serialized_buffer, serialized_buffer_size);
+    compressed_toctree_t_to_bytes(pod, serialized_buffer, serialized_buffer_size);
 
     view.fill(VDF_REAL_DTYPE(0));
 
@@ -1653,14 +1653,14 @@ compressed_octree_t bytes_to_compressed_octree_t(uint8_t* data, uint64_t n_packe
 
   }
 
-void uncompress_with_octree_method(VDF_REAL_DTYPE* buffer, const size_t Nx, const size_t Ny, const size_t Nz,
+void uncompress_with_toctree_method(VDF_REAL_DTYPE* buffer, const size_t Nx, const size_t Ny, const size_t Nz,
                                  uint8_t* serialized_buffer, uint64_t serialized_buffer_size, bool clear_buffer)
 {
   using namespace Eigen;
   using namespace tree_compressor;
 
   typedef OCTREE_VIEW_INDEX_TYPE UI;
-  compressed_octree_t pod = bytes_to_compressed_octree_t(serialized_buffer, serialized_buffer_size);
+  compressed_toctree_t pod = bytes_to_compressed_toctree_t(serialized_buffer, serialized_buffer_size);
   auto tuckers = Deserialize<VDF_REAL_DTYPE, OCTREE_VIEW_INDEX_TYPE, OCTREE_TUCKER_CORE_RANK, 3>(pod); // spatial dimension is 3
 
   assert((pod.root_dims[0] == Nx) && 
