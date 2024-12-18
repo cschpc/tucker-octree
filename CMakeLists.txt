@@ -1,11 +1,16 @@
 CMAKE_MINIMUM_REQUIRED(VERSION 3.10)
 
-PROJECT(VDF_OCTREE CXX C)
+PROJECT(VDF_OCTREE VERSION 1.0.0 LANGUAGES CXX C )
 
 set(CMAKE_BUILD_TYPE "RelWIthDebInfo" CACHE STRING "")
 
 find_package(Eigen3 3.3 REQUIRED NO_MODULE)
 find_package(zfp REQUIRED)
+
+option(BUILD_SHARED_LIBS "Build using shared libraries" OFF)
+option(VERBOSE_DEBUG "Output verbose debugging messages" OFF)
+option(BRIEF_DEBUG "Output brief debugging messages" OFF)
+option(OCTREE_RANGE_CHECK "Check out of bounds accesses" OFF)
 
 add_library(toctree_compressor toctree.cpp)
 ADD_EXECUTABLE(toctree test.cpp)
@@ -15,10 +20,6 @@ target_link_libraries (toctree Eigen3::Eigen toctree_compressor)
 
 set_property(TARGET toctree PROPERTY CXX_STANDARD 17)
 set_property(TARGET toctree_compressor PROPERTY CXX_STANDARD 17)
-
-option(VERBOSE_DEBUG "Output verbose debugging messages" OFF)
-option(BRIEF_DEBUG "Output brief debugging messages" OFF)
-option(OCTREE_RANGE_CHECK "Check out of bounds accesses" OFF)
 
 set(VDF_REAL_DTYPE "float" CACHE STRING "Datatype of the dense input buffer")
 set(OCTREE_TUCKER_CORE_RANK 2 CACHE STRING "Tucker core dimension in one dimension")

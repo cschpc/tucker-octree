@@ -299,7 +299,8 @@ struct TensorView {
 private:
 
   indexrange<L,N> I;
-  Eigen::Tensor<T,N,Eigen::ColMajor>& datatensor;
+  Eigen::TensorMap<Eigen::Tensor<T,N,Eigen::ColMajor>>& datatensor;
+  /* Eigen::Tensor<T,N,Eigen::ColMajor>& datatensor; */
 
   template<typename ...M>
   size_t get_J_(uint8_t mode, uint8_t p, M ...rest) const {
@@ -310,8 +311,8 @@ private:
 
 public:
 
-  TensorView(Eigen::Tensor<T,N,Eigen::ColMajor> &datatensor) : datatensor(datatensor) {};
-  TensorView(Eigen::Tensor<T,N,Eigen::ColMajor> &datatensor, indexrange<L, N> I) : datatensor(datatensor),  I(I) {};
+  TensorView(Eigen::TensorMap<Eigen::Tensor<T,N,Eigen::ColMajor>> &datatensor) : datatensor(datatensor) {};
+  TensorView(Eigen::TensorMap<Eigen::Tensor<T,N,Eigen::ColMajor>> &datatensor, indexrange<L, N> I) : datatensor(datatensor),  I(I) {};
 
   void setIndexrange(indexrange<L,N> I) { this->I = I;}
 
@@ -1644,9 +1645,8 @@ compressed_toctree_t bytes_to_compressed_toctree_t(uint8_t* data, uint64_t n_pac
     using UI = OCTREE_VIEW_INDEX_TYPE;
     const uint8_t core_rank = OCTREE_TUCKER_CORE_RANK;
 
-    TensorMap<Tensor<VDF_REAL_DTYPE, 3,ColMajor>> datamap(buffer, Nx, Ny, Nz);
-    Tensor<VDF_REAL_DTYPE, 3, ColMajor> datatensor(datamap);
-
+    TensorMap<Tensor<VDF_REAL_DTYPE, 3,ColMajor>> datatensor(buffer, Nx, Ny, Nz);
+    /* Tensor<VDF_REAL_DTYPE, 3, ColMajor> datatensor(datamap); */
 
     indexrange<UI, 3> K({0,0,0},{UI(Nx-1),UI(Ny-1),UI(Nz-1)});
 
@@ -1657,7 +1657,7 @@ compressed_toctree_t bytes_to_compressed_toctree_t(uint8_t* data, uint64_t n_pac
 
     auto res0 = view.get_residual();
 
-    const int maxiter = 100;
+    const int maxiter = 100; // TODO: make this a parameter
 
     std::vector<unique_ptr<Tucker<VDF_REAL_DTYPE,UI,core_rank,3>>> tuckers;
 
@@ -1709,17 +1709,17 @@ compressed_toctree_t bytes_to_compressed_toctree_t(uint8_t* data, uint64_t n_pac
 
     compressed_toctree_t_to_bytes(pod, serialized_buffer, serialized_buffer_size);
 
-    view.fill(VDF_REAL_DTYPE(0));
+    /* view.fill(VDF_REAL_DTYPE(0)); */
 
-    for ( auto& it : tuckers) {
-      auto& tuck = *(it);
-      tuck.fill_residual(VDF_REAL_DTYPE(1), VDF_REAL_DTYPE(1));
-    }
+    /* for ( auto& it : tuckers) { */
+    /*   auto& tuck = *(it); */
+    /*   tuck.fill_residual(VDF_REAL_DTYPE(1), VDF_REAL_DTYPE(1)); */
+    /* } */
 
   }
 
 void uncompress_with_toctree_method(VDF_REAL_DTYPE* buffer, const size_t Nx, const size_t Ny, const size_t Nz,
-                                 uint8_t* serialized_buffer, uint64_t serialized_buffer_size, bool clear_buffer)
+                                 uint8_t* serialized_buffer, uint64_t serialized_buffer_size)
 {
   using namespace Eigen;
   using namespace tree_compressor;
@@ -1732,8 +1732,8 @@ void uncompress_with_toctree_method(VDF_REAL_DTYPE* buffer, const size_t Nx, con
          (pod.root_dims[1] == Ny) && 
          (pod.root_dims[2] == Nz) && "Invalid buffer size");
 
-  TensorMap<Tensor<VDF_REAL_DTYPE, 3,ColMajor>> datamap(buffer, Nx, Ny, Nz);
-  Tensor<VDF_REAL_DTYPE, 3, ColMajor> datatensor(datamap);
+  TensorMap<Tensor<VDF_REAL_DTYPE, 3,ColMajor>> datatensor(buffer, Nx, Ny, Nz);
+  /* Tensor<VDF_REAL_DTYPE, 3, ColMajor> datatensor(datamap); */
   indexrange<UI, 3> K({0,0,0},{UI(Nx-1),UI(Ny-1),UI(Nz-1)});
   auto view = TensorView<VDF_REAL_DTYPE, UI, 3>(datatensor, K);
   view.fill(VDF_REAL_DTYPE(0));

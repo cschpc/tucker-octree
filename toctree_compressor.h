@@ -85,11 +85,10 @@ void compress_with_toctree_method_new(VDF_REAL_DTYPE* buffer, const size_t Nx, c
 
 void compress_with_toctree_method(VDF_REAL_DTYPE* buffer, 
                                  const size_t Nx, const size_t Ny, const size_t Nz, 
-                                 VDF_REAL_DTYPE tolerance, 
-                                 uint8_t** serialized_buffer, uint64_t* serialized_buffer_size);
+                                 VDF_REAL_DTYPE tolerance, uint8_t** serialized_buffer, uint64_t* serialized_buffer_size);
 
 void uncompress_with_toctree_method(VDF_REAL_DTYPE* buffer, const size_t Nx, const size_t Ny, const size_t Nz,
-                                   uint8_t* serialized_buffer, uint64_t serialized_buffer_size, bool clear_buffer);
+                                   uint8_t* serialized_buffer, uint64_t serialized_buffer_size);
 
 }
 #endif

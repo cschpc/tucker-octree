@@ -144,7 +144,7 @@ namespace toctree_test {
   }
 
 
-#if 1
+#if 0
   template<typename UI>
     void test_img(size_t maxiter, UI Nx, UI Ny) {
       using namespace Eigen;
@@ -263,8 +263,14 @@ namespace toctree_test {
       using namespace Eigen;
       using namespace std;
       const size_t core_rank = 2;
-      auto datatensor = Tensor<double, 3, ColMajor>(Nx,Ny,Nz);
+      double* buffer = (double*)malloc(sizeof(double)*Nx*Ny*Nz);
+
+      TensorMap<Tensor<double, 3, ColMajor>> datatensor(buffer, Nx, Ny,Nz);
+
+      /* auto datatensor = Tensor<double, 3, ColMajor>(Nx,Ny,Nz); */
+      /* Tensor<double, 3, ColMajor> datatensor(datamap); */
       indexrange<UI, 3> K({0,0,0},{UI(Nx-1),UI(Ny-1),UI(Nz-1)});
+
 
 
       auto tree = leaf<indexrange<UI,3>,3>();
@@ -273,7 +279,7 @@ namespace toctree_test {
       /* divide_leaf(tree); */
       UI big_N = MAX(Nx, MAX(Ny,Nz));
       auto f = [&](int I) {return M_PIf64*(I+1)/big_N;};
-      auto F = [&](int I1, int I2, int I3) {return exp(-pow((I1+I2+I3)/(big_N),2))*sin(M_PIf64*(I1+I2+I3+1)/(2*big_N));};
+      auto F = [&](int I1, int I2, int I3) {return exp(-pow((I1+I2+I3)/(big_N),2))*cos(M_PIf64*(I1+I2+I3+1)/(2*big_N));};
 
       auto view = TensorView<double,UI,3>(datatensor, K);
       for (int i1 = 0; i1<view.size(0); i1++) {
@@ -282,6 +288,7 @@ namespace toctree_test {
             view(i1,i2,i3) = F(i1,i2,i3);
           }}}
 
+      cout << "buffer[5] = " << buffer[5] << ", " << datatensor(5,0,0) << ", " << view(5,0,0) << endl;
       std::stack<unique_ptr<Tucker<double,UI,core_rank,3>>> tuck_stack;
       std::vector<unique_ptr<Tucker<double,UI,core_rank,3>>> tuckers;
 
@@ -321,6 +328,8 @@ namespace toctree_test {
         tuckers.push_back(std::move(tuck));
         /* delete c_view; */
       }
+
+      cout << "buffer[5] = " << buffer[5] << ", " << datatensor(5,0,0) << endl;
 
       cout << "residual sqnorm: " << view.sqnorm() << std::endl;
 
@@ -370,6 +379,7 @@ namespace toctree_test {
           }}}
       cout << "final reconstruction error sqnorm: " << view.sqnorm() << std::endl;
 
+      cout << "buffer[5] = " << buffer[5] << ", " << datatensor(5,0,0) << endl;
     }
 
   void test_normalprods(std::vector<uint16_t> sizes) {
@@ -456,7 +466,7 @@ int main(int argc, const char** argv) {
    test_tree(treeparam[0], treeparam[1], treeparam[2], treeparam[3]);
   }
 
-#if 1
+#if 0
   if (imgparam[0] > 0) test_img<uint32_t>(static_cast<uint32_t>(imgparam[0]), static_cast<uint32_t>(imgparam[1]), static_cast<uint32_t>(imgparam[2]));
 #endif
 
