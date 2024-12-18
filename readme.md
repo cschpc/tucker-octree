@@ -10,7 +10,7 @@ Typical cmake installation:
 
 ```bash
 > mkdir build; cd build
-> cmake .. -DEigen3_DIR="path/to/share/eigen3/cmake" -Dzfp_DIR="path/to/lib/cmake/zfp" -DCMAKE_INSTALL_PREFIX="<vlasiator-path>/vdf_compression"
+> cmake .. -DCMAKE_BUILD_TYPE=Release -DEigen3_DIR="path/to/share/eigen3/cmake" -Dzfp_DIR="path/to/lib/cmake/zfp" -DCMAKE_INSTALL_PREFIX="<vlasiator-path>/vdf_compression"
 > make install
 ```
 
