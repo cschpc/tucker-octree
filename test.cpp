@@ -260,7 +260,7 @@ namespace toctree_test {
 
 #if 1
   template<typename UI>
-    void test_tree(size_t maxiter, UI Nx, UI Ny, UI Nz) {
+    void test_tree(size_t maxiter, UI Nx, UI Ny, UI Nz, VDF_REAL_DTYPE tol) {
       using namespace Eigen;
       using namespace std;
       const size_t core_rank = 2;
@@ -293,7 +293,7 @@ namespace toctree_test {
 
       cout << "buffer[5] = " << buffer[5] << ", " << datatensor(5,0,0) << ", " << view(5,0,0) << endl;
 
-      compress_with_toctree_method(buffer, Nx, Ny, Nz, 0.05, &bytes, &n_bytes);
+      compress_with_toctree_method(buffer, Nx, Ny, Nz, tol, &bytes, &n_bytes, maxiter);
 
       cout << "buffer[5] = " << buffer[5] << ", " << datatensor(5,0,0) << endl;
 
@@ -320,7 +320,7 @@ namespace toctree_test {
 
 #if 0
   template<typename UI>
-    void test_tree(size_t maxiter, UI Nx, UI Ny, UI Nz) {
+    void test_tree(size_t maxiter, UI Nx, UI Ny, UI Nz, VDF_REAL_DTYPE tol) {
       using namespace Eigen;
       using namespace std;
       const size_t core_rank = 2;
@@ -507,6 +507,7 @@ int main(int argc, const char** argv) {
     vector<size_t> &treetest = kwarg("T,tree", "Test toctree. Param: maxiter, Nx,Ny,Nz ").set_default("0,4,4,4");
     string& outfile = kwarg("o,outfile", "Output structured data to this file.").set_default("");
     vector<size_t> &imgtest = kwarg("I,img", "Test with 2d data. Param: maxiter, Nx, Ny").set_default("0,0,0");
+    VDF_REAL_DTYPE &tolerance = kwarg("f,tol", "Abs error tolerance. Param: tol").set_default("0.01");
   };
 
 
@@ -533,7 +534,7 @@ int main(int argc, const char** argv) {
   
   if (treeparam[0] > 0) {
    cout << "\ntesting tree next\n";
-   test_tree(treeparam[0], treeparam[1], treeparam[2], treeparam[3]);
+   test_tree(treeparam[0], treeparam[1], treeparam[2], treeparam[3], args.tolerance);
   }
 
 #if 0

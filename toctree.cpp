@@ -1473,8 +1473,7 @@ void print_compressed_toctree_t(compressed_toctree_t pod)
   
 }
 
-void compressed_toctree_t_to_bytes(compressed_toctree_t pod, uint8_t **bytes, uint64_t* n_bytes)
-{
+void compressed_toctree_t_to_bytes(compressed_toctree_t pod, uint8_t **bytes, uint64_t* n_bytes) {
 
   ptrdiff_t acc;
   /* std::cout << "BEFORE DESERIALIZATION:\n"; */
@@ -1529,20 +1528,9 @@ void compressed_toctree_t_to_bytes(compressed_toctree_t pod, uint8_t **bytes, ui
 #undef stof
 #undef copy_ptr
 #undef copy_atomic
-  // TODO
-    /* { */
-    /* FILE *fp = fopen("bytes.bin", "wb"); */
-    /* fwrite(*bytes, 1, acc, fp); */
-    /* fclose(fp); */
-    /* } */
-    /* { */
-    /* FILE *fp = fopen("packed.bin", "wb"); */
-    /* fwrite(pod.packed_bytes, 1, pod.n_packed_bytes, fp); */
-    /* fclose(fp); */
-    /* } */
 }
 
-// TODO: move thins to somewhere else
+// TODO: move this to somewhere else (pod_serialize.c?)
 compressed_toctree_t bytes_to_compressed_toctree_t(uint8_t* data, uint64_t n_packed)
 {
 
@@ -1605,9 +1593,6 @@ compressed_toctree_t bytes_to_compressed_toctree_t(uint8_t* data, uint64_t n_pac
 
   assert(pod.bytes_per_leaf_coordinate == sizeof(ATOMIC_OCTREE_COORDINATE_DTYPE) && "Invalid bytes per leaf coordinate");
 
-  // This shouldn't be done..
-  /* pod.packed_bytes = new uint8_t[pod.n_packed_bytes]; */
-
   assert(n_packed == acc && "n_packed and number of bytes read does not match");
 
   /* std::cout << "AFTER DESERIALIZATION:\n"; */
@@ -1620,116 +1605,94 @@ compressed_toctree_t bytes_to_compressed_toctree_t(uint8_t* data, uint64_t n_pac
 
   /* TODO: 
    * - [ ] what happens when data is zero. Then residual should be immediately under tolerance!
-   * - [ ] return pointer to packed buffer and some lengths */
-  void compress_with_toctree_method(VDF_REAL_DTYPE* buffer, 
-                                   const size_t Nx, const size_t Ny, const size_t Nz, 
-                                   VDF_REAL_DTYPE tolerance,
-                                   uint8_t** serialized_buffer, 
-                                   uint64_t* serialized_buffer_size) {
-    using namespace Eigen;
-    using namespace tree_compressor;
-    using namespace std;
+   */
+void compress_with_toctree_method(VDF_REAL_DTYPE* buffer, 
+                                  const size_t Nx, const size_t Ny, const size_t Nz, 
+                                  VDF_REAL_DTYPE tolerance,
+                                  uint8_t** serialized_buffer, 
+                                  uint64_t* serialized_buffer_size,
+                                  uint64_t maxiter) {
+  using namespace Eigen;
+  using namespace tree_compressor;
+  using namespace std;
 
-    using UI = OCTREE_VIEW_INDEX_TYPE;
-    const uint8_t core_rank = OCTREE_TUCKER_CORE_RANK;
+  using UI = OCTREE_VIEW_INDEX_TYPE;
+  const uint8_t core_rank = OCTREE_TUCKER_CORE_RANK;
 
-    TensorMap<Tensor<VDF_REAL_DTYPE, 3,ColMajor>> datatensor(buffer, Nx, Ny, Nz);
-    /* Tensor<VDF_REAL_DTYPE, 3, ColMajor> datatensor(datamap); */
+  TensorMap<Tensor<VDF_REAL_DTYPE, 3,ColMajor>> datatensor(buffer, Nx, Ny, Nz);
 
-    indexrange<UI, 3> K({0,0,0},{UI(Nx-1),UI(Ny-1),UI(Nz-1)});
+  indexrange<UI, 3> K({0,0,0},{UI(Nx-1),UI(Ny-1),UI(Nz-1)});
 
-    auto view = TensorView<VDF_REAL_DTYPE, UI, 3>(datatensor, K);
+  auto view = TensorView<VDF_REAL_DTYPE, UI, 3>(datatensor, K);
 
-    auto tree = leaf<indexrange<UI, 3>,3>();
-    tree.data = K;
+  auto tree = leaf<indexrange<UI, 3>,3>();
+  tree.data = K;
 
-    auto res0 = view.get_residual();
+  auto res0 = view.get_residual();
 
-    const int maxiter = 100; // TODO: make this a parameter
+  /* const int maxiter = 300; // TODO: make this a parameter */
 
-    std::vector<unique_ptr<Tucker<VDF_REAL_DTYPE,UI,core_rank,3>>> tuckers;
+  std::vector<unique_ptr<Tucker<VDF_REAL_DTYPE,UI,core_rank,3>>> tuckers;
 
-    VDF_REAL_DTYPE relres = 10.0;
-    
-    size_t iter = 0;
+  VDF_REAL_DTYPE relres = 10.0;
 
-    while((iter < maxiter) && (relres > tolerance)) {
-      ++iter;
-      /* cout << "iter: " << iter << " sqnorm of view " << view.sqnorm() << "\t\t|\t"; */
+  size_t iter = 0;
 
-      VDF_REAL_DTYPE residual = -1.0;
+  while((iter < maxiter) && (relres > tolerance)) {
+    ++iter;
+    /* cout << "iter: " << iter << " sqnorm of view " << view.sqnorm() << "\t\t|\t"; */
 
-      // find worst leaf
-      leaf<indexrange<UI,3>,3>* worst_leaf;
+    VDF_REAL_DTYPE residual = -1.0;
 
-      for (auto it = tree.begin(); it != tree.end(); ++it) {
-        auto& leaf = *it;
-        auto c_view = TensorView<VDF_REAL_DTYPE, UI, 3>(datatensor, leaf.data);
-        VDF_REAL_DTYPE c_residual = c_view.get_residual();
-        if (c_residual > residual) {
-          residual = c_residual;
-          worst_leaf = &leaf;
-        }
-      };
+    // find worst leaf
+    leaf<indexrange<UI,3>,3>* worst_leaf;
 
-      // improve worst leaf
-      relres = residual/res0;
-
-      /* cout << "tol: " << tolerance << " worst leaf: " << worst_leaf->level << " : "<<  worst_leaf->data << " residual: " << relres << endl; */
-      /* cout << "worst leaf: " << worst_leaf->level << " : "<<  worst_leaf->data << " residual: " << residual; */
-      divide_leaf(*worst_leaf);
-
-      OctreeCoordinates<3> worst_coords = leaf_to_coordinates(*worst_leaf);
-      uint32_t atomic_coords = worst_coords.template toAtomic<uint32_t>();
-      /* cout << worst_leaf->level << "\t|  worst_coords: " << worst_coords <<":"<<atomic_coords<< ":" */ 
-      /*     << OctreeCoordinates<3>(worst_coords.template toAtomic<uint32_t>(), worst_leaf->level) */ 
-      /*     << " inds: " << K.getsubrange(worst_coords) << endl; */
-
-      std::unique_ptr<TensorView<VDF_REAL_DTYPE,UI,3>> c_view(new TensorView<VDF_REAL_DTYPE,UI,3>(datatensor, worst_leaf->data));
-      std::unique_ptr<Tucker<VDF_REAL_DTYPE, UI, core_rank, 3>> tuck(new Tucker<VDF_REAL_DTYPE,UI,core_rank,3>(std::move(c_view))); /* TODO: save tucker to leaf! */
-      tuck->fill_residual();
-      tuck->setCoordinates(worst_coords);
-      tuckers.push_back(std::move(tuck));
-    }
-
-    auto serializer = SerialTucker<VDF_REAL_DTYPE, UI, OCTREE_TUCKER_CORE_RANK, 3, ATOMIC_OCTREE_COORDINATE_DTYPE>(tuckers, K);
-    auto pod = serializer.to_pod();
-
-    compressed_toctree_t_to_bytes(pod, serialized_buffer, serialized_buffer_size);
-
-    // TODO: DEBUG
-      {
-      FILE *fp = fopen("bytes_test_at_compress.bin", "wb");
-      fwrite(*serialized_buffer, 1, *serialized_buffer_size, fp);
-      fclose(fp);
+    for (auto it = tree.begin(); it != tree.end(); ++it) {
+      auto& leaf = *it;
+      auto c_view = TensorView<VDF_REAL_DTYPE, UI, 3>(datatensor, leaf.data);
+      VDF_REAL_DTYPE c_residual = c_view.get_residual();
+      if (c_residual > residual) {
+        residual = c_residual;
+        worst_leaf = &leaf;
       }
+    };
 
-    /* view.fill(VDF_REAL_DTYPE(0)); */
+    // improve worst leaf
+    relres = residual/res0;
 
-    /* for ( auto& it : tuckers) { */
-    /*   auto& tuck = *(it); */
-    /*   tuck.fill_residual(VDF_REAL_DTYPE(1), VDF_REAL_DTYPE(1)); */
-    /* } */
+    /* cout << "tol: " << tolerance << " worst leaf: " << worst_leaf->level << " : "<<  worst_leaf->data << " residual: " << relres << endl; */
+    /* cout << "worst leaf: " << worst_leaf->level << " : "<<  worst_leaf->data << " residual: " << residual; */
+    divide_leaf(*worst_leaf);
 
+    OctreeCoordinates<3> worst_coords = leaf_to_coordinates(*worst_leaf);
+    uint32_t atomic_coords = worst_coords.template toAtomic<uint32_t>();
+    /* cout << worst_leaf->level << "\t|  worst_coords: " << worst_coords <<":"<<atomic_coords<< ":" */ 
+    /*     << OctreeCoordinates<3>(worst_coords.template toAtomic<uint32_t>(), worst_leaf->level) */ 
+    /*     << " inds: " << K.getsubrange(worst_coords) << endl; */
+
+    std::unique_ptr<TensorView<VDF_REAL_DTYPE,UI,3>> c_view(new TensorView<VDF_REAL_DTYPE,UI,3>(datatensor, worst_leaf->data));
+    std::unique_ptr<Tucker<VDF_REAL_DTYPE, UI, core_rank, 3>> tuck(new Tucker<VDF_REAL_DTYPE,UI,core_rank,3>(std::move(c_view))); /* TODO: save tucker to leaf! */
+    tuck->fill_residual();
+    tuck->setCoordinates(worst_coords);
+    tuckers.push_back(std::move(tuck));
   }
 
+  auto serializer = SerialTucker<VDF_REAL_DTYPE, UI, OCTREE_TUCKER_CORE_RANK, 3, ATOMIC_OCTREE_COORDINATE_DTYPE>(tuckers, K);
+  auto pod = serializer.to_pod();
+
+  compressed_toctree_t_to_bytes(pod, serialized_buffer, serialized_buffer_size);
+
+}
+
 void uncompress_with_toctree_method(VDF_REAL_DTYPE* buffer, const size_t Nx, const size_t Ny, const size_t Nz,
-                                 uint8_t* serialized_buffer, uint64_t serialized_buffer_size)
-{
+                                    uint8_t* serialized_buffer, uint64_t serialized_buffer_size) {
   using namespace Eigen;
   using namespace tree_compressor;
 
   typedef OCTREE_VIEW_INDEX_TYPE UI;
-  
-    // TODO: DEBUG
-    {
-    FILE *fp = fopen("bytes_test_at_uncompress.bin", "wb");
-    fwrite(serialized_buffer, 1, serialized_buffer_size, fp);
-    fclose(fp);
-    }
 
   compressed_toctree_t pod = bytes_to_compressed_toctree_t(serialized_buffer, serialized_buffer_size);
-  
+
   auto tuckers = Deserialize<VDF_REAL_DTYPE, OCTREE_VIEW_INDEX_TYPE, OCTREE_TUCKER_CORE_RANK, 3>(pod); // spatial dimension is 3
 
   assert((pod.root_dims[0] == Nx) && 
@@ -1737,7 +1700,6 @@ void uncompress_with_toctree_method(VDF_REAL_DTYPE* buffer, const size_t Nx, con
          (pod.root_dims[2] == Nz) && "Invalid buffer size");
 
   TensorMap<Tensor<VDF_REAL_DTYPE, 3,ColMajor>> datatensor(buffer, Nx, Ny, Nz);
-  /* Tensor<VDF_REAL_DTYPE, 3, ColMajor> datatensor(datamap); */
   indexrange<UI, 3> K({0,0,0},{UI(Nx-1),UI(Ny-1),UI(Nz-1)});
   auto view = TensorView<VDF_REAL_DTYPE, UI, 3>(datatensor, K);
   view.fill(VDF_REAL_DTYPE(0));
