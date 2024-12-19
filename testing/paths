@@ -1,0 +1,2 @@
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$HOME/src/vlasiator/vdf_compression/octree/build
+export VLSV_ASSETS_PATH=$HOME/workspace/asterix/assets
