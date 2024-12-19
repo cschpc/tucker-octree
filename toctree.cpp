@@ -402,6 +402,26 @@ public:
   return acc;
   }
 
+  T supnorm() {
+    T acc = T(-1);
+    if constexpr (N==3) {
+      for (size_t i3 = 0; i3 < this->size(2); i3++) 
+      for (size_t i2 = 0; i2 < this->size(1); i2++)
+      for (size_t i1 = 0; i1 < this->size(0); i1++) 
+      {
+      acc = MAX(acc, abs((*this)(i1,i2,i3)));
+      }
+    }
+    else if constexpr (N==2) {
+      for (size_t i2 = 0; i2 < this->size(1); i2++)
+      for (size_t i1 = 0; i1 < this->size(0); i1++) 
+      {
+      acc = MAX(acc, abs((*this)(i1,i2)));
+      }
+    }
+    return acc;
+  }
+
 
   template<typename T_, size_t N_>
   friend std::ostream& operator <<(std::ostream &o, const indexrange<T_, N_> R);
@@ -997,70 +1017,55 @@ public:
   }
 
   template<size_t N_ = N, std::enable_if_t<N_==2,int> = 0>
-  void fill_residual(TensorView<T,L,N>& main_view, const VDF_REAL_DTYPE mult_orig, const VDF_REAL_DTYPE mult_corr) {
-    auto view = main_view;
+  void fill_residual(TensorView<T,L,N>& view, const VDF_REAL_DTYPE mult_orig, const VDF_REAL_DTYPE mult_corr) {
+    auto origRange = view.getIndexrange();
     view.setIndexrange(view.getIndexrange().getsubrange(this->coordinates));
 
     for(size_t i1 = 0; i1 < view.size(0); i1++)
-    for(size_t i2 = 0; i2 < view.size(1); i2++) {
-      T acc = T(0);
-      for(size_t j1 = 0; j1 < core_rank; j1++)
-      for(size_t j2 = 0; j2 < core_rank; j2++) {
-        acc = acc + 
-          this->core(j1,j2)*
-          this->factors[0](i1,j1)*
-          this->factors[1](i2,j2);
+      for(size_t i2 = 0; i2 < view.size(1); i2++) {
+        T acc = T(0);
+        for(size_t j1 = 0; j1 < core_rank; j1++)
+          for(size_t j2 = 0; j2 < core_rank; j2++) {
+            acc = acc + 
+              this->core(j1,j2)*
+              this->factors[0](i1,j1)*
+              this->factors[1](i2,j2);
+          }
+        view(i1,i2) = mult_orig*view(i1,i2) + mult_corr*acc;
       }
-    view(i1,i2) = mult_orig*view(i1,i2) + mult_corr*acc;
-    }
 
+    view.setIndexrange(origRange);
   }
 
   template<size_t N_ = N, std::enable_if_t<N_==3,int> = 0> // ok
-  void fill_residual(TensorView<T,L,N>& main_view, const VDF_REAL_DTYPE mult_orig, const VDF_REAL_DTYPE mult_corr) {
-    auto view = main_view;
+  void fill_residual(TensorView<T,L,N>& view, const VDF_REAL_DTYPE mult_orig, const VDF_REAL_DTYPE mult_corr) {
+    auto origRange = view.getIndexrange();
     view.setIndexrange(view.getIndexrange().getsubrange(this->coordinates));
 
     for(size_t i1 = 0; i1 < view.size(0); i1++)
-    for(size_t i2 = 0; i2 < view.size(1); i2++)
-    for(size_t i3 = 0; i3 < view.size(2); i3++) {
-      T acc = T(0);
-      for(size_t j1 = 0; j1 < core_rank; j1++)
-      for(size_t j2 = 0; j2 < core_rank; j2++)
-      for(size_t j3 = 0; j3 < core_rank; j3++) {
-        acc = acc + 
-          this->core(j1,j2,j3)*
-          this->factors[0](i1,j1)*
-          this->factors[1](i2,j2)*
-          this->factors[2](i3,j3);
-      }
-    view(i1,i2,i3) = mult_orig*view(i1,i2,i3) + mult_corr*acc;
-    }
-
+      for(size_t i2 = 0; i2 < view.size(1); i2++)
+        for(size_t i3 = 0; i3 < view.size(2); i3++) {
+          T acc = T(0);
+          for(size_t j1 = 0; j1 < core_rank; j1++)
+            for(size_t j2 = 0; j2 < core_rank; j2++)
+              for(size_t j3 = 0; j3 < core_rank; j3++) {
+                acc = acc + 
+                  this->core(j1,j2,j3)*
+                  this->factors[0](i1,j1)*
+                  this->factors[1](i2,j2)*
+                  this->factors[2](i3,j3);
+              }
+          view(i1,i2,i3) = mult_orig*view(i1,i2,i3) + mult_corr*acc;
+        }
+    view.setIndexrange(origRange);
   }
 
   /* Warning! Mutates the view contents! */
   /* template<size_t N_ = N, std::enable_if_t<N_==3,int> = 0> */
   void fill_residual(const VDF_REAL_DTYPE mult_orig, const VDF_REAL_DTYPE mult_corr) {
 
-  TensorView<T,L,N>& view = *(this->view_ptr);
-  this->fill_residual(view, mult_orig, mult_corr);
-
-    /* for(size_t i1 = 0; i1 < view.size(0); i1++) */
-    /* for(size_t i2 = 0; i2 < view.size(1); i2++) */
-    /* for(size_t i3 = 0; i3 < view.size(2); i3++) { */
-    /*   T acc = T(0); */
-    /*   for(size_t j1 = 0; j1 < core_rank; j1++) */
-    /*   for(size_t j2 = 0; j2 < core_rank; j2++) */
-    /*   for(size_t j3 = 0; j3 < core_rank; j3++) { */
-    /*     acc = acc + */ 
-    /*       this->core(j1,j2,j3)* */
-    /*       this->factors[0](i1,j1)* */
-    /*       this->factors[1](i2,j2)* */
-    /*       this->factors[2](i3,j3); */
-    /*   } */
-    /* view(i1,i2,i3) = mult_orig*view(i1,i2,i3) + mult_corr*acc; */
-    /* } */
+    TensorView<T,L,N>& view = *(this->view_ptr);
+    this->fill_residual(view, mult_orig, mult_corr);
   }
 
 private: 
@@ -1207,7 +1212,7 @@ public:
       for (size_t k = 0; k<n_per_core; ++k) {
         T x = tuck->core.data()[k];
         this->core_scale = MAX(this->core_scale, abs(x));
-        serialized[bias + k] = x; //tuck->core.data()[k];
+        serialized[bias + k] = x;
       }
       ++acc;
     }
@@ -1232,20 +1237,6 @@ public:
   }
 
 
-  size_t pushfactors(std::vector<std::array<Eigen::Matrix<T,Eigen::Dynamic, core_rank>, 2>>& factors, std::array<size_t, 2>& FL, T* data) {
-    factors.push_back({
-                      Eigen::Map<Eigen::Matrix<T, Eigen::Dynamic, core_rank>>(data                           , FL[0], core_rank),
-                      Eigen::Map<Eigen::Matrix<T, Eigen::Dynamic, core_rank>>(data + FL[0]*core_rank         , FL[1], core_rank)});
-    return (FL[0] + FL[1])*core_rank;
-  }
-
-  size_t pushfactors(std::vector<std::array<Eigen::Matrix<T,Eigen::Dynamic, core_rank>, 3>>& factors, std::array<size_t, 3>& FL, T* data) {
-    factors.push_back({
-                      Eigen::Map<Eigen::Matrix<T, Eigen::Dynamic, core_rank>>(data                           , FL[0], core_rank),
-                      Eigen::Map<Eigen::Matrix<T, Eigen::Dynamic, core_rank>>(data + FL[0]*core_rank         , FL[1], core_rank),
-                      Eigen::Map<Eigen::Matrix<T, Eigen::Dynamic, core_rank>>(data + (FL[1]+FL[0])*core_rank , FL[2], core_rank)});
-    return (FL[0] + FL[1] + FL[2])*core_rank;
-  }
 
 /* TODO: 
  * - [ ] move Deserialize outside SerialTucker and give all data explicitly in arguments */
@@ -1421,10 +1412,7 @@ std::vector<std::unique_ptr<Tucker<T,L,core_rank,N>>> Deserialize(compressed_toc
   static_assert( (N==2 || N==3) && "Incompatible dimension requested" );
 
   serializer.unmake_serialized_bytes();
-  /* cout << "################################\n"; */
-  /* cout << serializer; */
-  /* cout << endl; */
-  /* cout << "################################\n"; */
+
   return serializer.Deserialize();
 }
 
@@ -1698,9 +1686,9 @@ compressed_toctree_t bytes_to_compressed_toctree_t(uint8_t* data, uint64_t n_pac
       /*     << " inds: " << K.getsubrange(worst_coords) << endl; */
 
       std::unique_ptr<TensorView<VDF_REAL_DTYPE,UI,3>> c_view(new TensorView<VDF_REAL_DTYPE,UI,3>(datatensor, worst_leaf->data));
-      std::unique_ptr<Tucker<VDF_REAL_DTYPE, UI, 2, 3>> tuck(new Tucker<VDF_REAL_DTYPE,UI,2,3>(std::move(c_view))); /* TODO: save tucker to leaf! */
-      tuck->setCoordinates(worst_coords);
+      std::unique_ptr<Tucker<VDF_REAL_DTYPE, UI, core_rank, 3>> tuck(new Tucker<VDF_REAL_DTYPE,UI,core_rank,3>(std::move(c_view))); /* TODO: save tucker to leaf! */
       tuck->fill_residual();
+      tuck->setCoordinates(worst_coords);
       tuckers.push_back(std::move(tuck));
     }
 
@@ -1708,6 +1696,13 @@ compressed_toctree_t bytes_to_compressed_toctree_t(uint8_t* data, uint64_t n_pac
     auto pod = serializer.to_pod();
 
     compressed_toctree_t_to_bytes(pod, serialized_buffer, serialized_buffer_size);
+
+    // TODO: DEBUG
+      {
+      FILE *fp = fopen("bytes_test_at_compress.bin", "wb");
+      fwrite(*serialized_buffer, 1, *serialized_buffer_size, fp);
+      fclose(fp);
+      }
 
     /* view.fill(VDF_REAL_DTYPE(0)); */
 
@@ -1725,7 +1720,16 @@ void uncompress_with_toctree_method(VDF_REAL_DTYPE* buffer, const size_t Nx, con
   using namespace tree_compressor;
 
   typedef OCTREE_VIEW_INDEX_TYPE UI;
+  
+    // TODO: DEBUG
+    {
+    FILE *fp = fopen("bytes_test_at_uncompress.bin", "wb");
+    fwrite(serialized_buffer, 1, serialized_buffer_size, fp);
+    fclose(fp);
+    }
+
   compressed_toctree_t pod = bytes_to_compressed_toctree_t(serialized_buffer, serialized_buffer_size);
+  
   auto tuckers = Deserialize<VDF_REAL_DTYPE, OCTREE_VIEW_INDEX_TYPE, OCTREE_TUCKER_CORE_RANK, 3>(pod); // spatial dimension is 3
 
   assert((pod.root_dims[0] == Nx) && 

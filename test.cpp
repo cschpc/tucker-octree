@@ -258,6 +258,67 @@ namespace toctree_test {
     }
 #endif
 
+#if 1
+  template<typename UI>
+    void test_tree(size_t maxiter, UI Nx, UI Ny, UI Nz) {
+      using namespace Eigen;
+      using namespace std;
+      const size_t core_rank = 2;
+      VDF_REAL_DTYPE* buffer = (VDF_REAL_DTYPE*)malloc(sizeof(VDF_REAL_DTYPE)*Nx*Ny*Nz);
+
+      uint8_t* bytes;
+      uint64_t n_bytes;
+
+      TensorMap<Tensor<VDF_REAL_DTYPE, 3, ColMajor>> datatensor(buffer, Nx, Ny,Nz);
+
+      indexrange<UI, 3> K({0,0,0},{UI(Nx-1),UI(Ny-1),UI(Nz-1)});
+
+      auto tree = leaf<indexrange<UI,3>,3>();
+      tree.data = K;
+
+      /* divide_leaf(tree); */
+      UI big_N = MAX(Nx, MAX(Ny,Nz));
+      auto f = [&](int I) {return M_PIf64*(I+1)/big_N;};
+      auto F = [&](int I1, int I2, int I3) {return exp(-3*pow((I1+I2+I3)/(big_N),2))*cos(M_PIf64*(I1+I2+I3+1)/(2*big_N));};
+
+      auto view = TensorView<VDF_REAL_DTYPE,UI,3>(datatensor, K);
+      for (int i1 = 0; i1<view.size(0); i1++) {
+        for (int i2 = 0; i2<view.size(1); i2++) {
+          for (int i3 = 0; i3<view.size(2); i3++) {
+            view(i1,i2,i3) = F(i1,i2,i3);
+          }}}
+
+      cout << "data sqnorm at start: " << view.sqnorm() << std::endl;
+      cout << "data supnorm at start: " << view.supnorm() << std::endl;
+
+      cout << "buffer[5] = " << buffer[5] << ", " << datatensor(5,0,0) << ", " << view(5,0,0) << endl;
+
+      compress_with_toctree_method(buffer, Nx, Ny, Nz, 0.05, &bytes, &n_bytes);
+
+      cout << "buffer[5] = " << buffer[5] << ", " << datatensor(5,0,0) << endl;
+
+      cout << "residual sqnorm: " << view.sqnorm() << std::endl;
+      cout << "residual supnorm: " << view.supnorm() << std::endl;
+
+      uncompress_with_toctree_method(buffer, Nx, Ny, Nz, bytes, n_bytes);
+
+      cout << "reconstructed sqnorm: " << view.sqnorm() << std::endl;
+      cout << "reconstructed supnorm: " << view.supnorm() << std::endl;
+
+      for (int i1 = 0; i1<view.size(0); i1++) {
+        for (int i2 = 0; i2<view.size(1); i2++) {
+          for (int i3 = 0; i3<view.size(2); i3++) {
+            view(i1,i2,i3) = view(i1,i2,i3) - F(i1,i2,i3);
+          }}}
+      cout << "final reconstruction error sqnorm: " << view.sqnorm() << std::endl;
+      cout << "final reconstruction error supnorm: " << view.supnorm() << std::endl;
+
+      cout << "buffer[5] = " << buffer[5] << ", " << datatensor(5,0,0) << endl;
+      free(buffer);
+    }
+#endif
+
+#if 0
   template<typename UI>
     void test_tree(size_t maxiter, UI Nx, UI Ny, UI Nz) {
       using namespace Eigen;
@@ -279,7 +340,7 @@ namespace toctree_test {
       /* divide_leaf(tree); */
       UI big_N = MAX(Nx, MAX(Ny,Nz));
       auto f = [&](int I) {return M_PIf64*(I+1)/big_N;};
-      auto F = [&](int I1, int I2, int I3) {return exp(-pow((I1+I2+I3)/(big_N),2))*cos(M_PIf64*(I1+I2+I3+1)/(2*big_N));};
+      auto F = [&](int I1, int I2, int I3) {return exp(-3*pow((I1+I2+I3)/(big_N),2))*cos(M_PIf64*(I1+I2+I3+1)/(2*big_N));};
 
       auto view = TensorView<double,UI,3>(datatensor, K);
       for (int i1 = 0; i1<view.size(0); i1++) {
@@ -288,9 +349,13 @@ namespace toctree_test {
             view(i1,i2,i3) = F(i1,i2,i3);
           }}}
 
+      cout << "data sqnorm at start: " << view.sqnorm() << std::endl;
+      cout << "data supnorm at start: " << view.supnorm() << std::endl;
+
       cout << "buffer[5] = " << buffer[5] << ", " << datatensor(5,0,0) << ", " << view(5,0,0) << endl;
       std::stack<unique_ptr<Tucker<double,UI,core_rank,3>>> tuck_stack;
       std::vector<unique_ptr<Tucker<double,UI,core_rank,3>>> tuckers;
+
 
       for(int iter=0; iter<maxiter; iter++) {
         cout << "iter: " << iter << " sqnorm of view " << view.sqnorm() << "\t\t|  ";
@@ -332,6 +397,7 @@ namespace toctree_test {
       cout << "buffer[5] = " << buffer[5] << ", " << datatensor(5,0,0) << endl;
 
       cout << "residual sqnorm: " << view.sqnorm() << std::endl;
+      cout << "residual supnorm: " << view.supnorm() << std::endl;
 
       view.fill(double(0));
 
@@ -372,15 +438,19 @@ namespace toctree_test {
       }
 
       cout << "reconstructed sqnorm: " << view.sqnorm() << std::endl;
+      cout << "reconstructed supnorm: " << view.supnorm() << std::endl;
       for (int i1 = 0; i1<view.size(0); i1++) {
         for (int i2 = 0; i2<view.size(1); i2++) {
           for (int i3 = 0; i3<view.size(2); i3++) {
             view(i1,i2,i3) = view(i1,i2,i3) - F(i1,i2,i3);
           }}}
       cout << "final reconstruction error sqnorm: " << view.sqnorm() << std::endl;
+      cout << "final reconstruction error supnorm: " << view.supnorm() << std::endl;
 
       cout << "buffer[5] = " << buffer[5] << ", " << datatensor(5,0,0) << endl;
+      free(buffer);
     }
+#endif
 
   void test_normalprods(std::vector<uint16_t> sizes) {
 #ifndef NOTEST

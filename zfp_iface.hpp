@@ -30,6 +30,9 @@
 #include <vector>
 #include <zfp.hpp>
 
+#include "toctree_config.h"
+
+
 namespace zfp_iface {
 
 template<typename T>
@@ -46,7 +49,7 @@ std::vector<uint8_t> compress(T* array, size_t arraySize, size_t& compressedSize
    std::vector<uint8_t> compressedData(maxSize);
 
    // Initialize ZFP compression
-   zfp_stream_set_accuracy(zfp, 1e-4);
+   zfp_stream_set_accuracy(zfp, TOCTREE_ZFP_STREAM_ACCURACY);
    bitstream* stream = stream_open(compressedData.data(), compressedSize);
    zfp_stream_set_bit_stream(zfp, stream);
    zfp_stream_rewind(zfp);
@@ -68,7 +71,7 @@ std::vector<T> decompressArrayFloat(uint8_t* compressedData, size_t compressedSi
 
    // Initialize ZFP decompression
    zfp_stream* zfp = zfp_stream_open(NULL);
-   zfp_stream_set_accuracy(zfp, 1e-4);
+   zfp_stream_set_accuracy(zfp, TOCTREE_ZFP_STREAM_ACCURACY);
    bitstream* stream_decompress = stream_open(compressedData, compressedSize);
    zfp_stream_set_bit_stream(zfp, stream_decompress);
    zfp_stream_rewind(zfp);
