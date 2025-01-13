@@ -249,10 +249,19 @@ public:
 
     {
         if (nev < 1 || nev > m_n )
-            throw std::invalid_argument("nev must satisfy 1 <= nev <= n , n is the size of matrix");
+          { 
+          std::stringstream errorstr;
+          errorstr << "nev must satisfy 1 <= nev <= n , n is the size of matrix. (nev,n) = " << nev << ", " << m_n;
+          throw std::invalid_argument(errorstr.str());
+          }
 
-        if (ncv < nev || ncv > m_n)
-            throw std::invalid_argument("ncv must satisfy nev <= ncv <= n, n is the size of matrix");
+
+        if (ncv < nev || ncv > m_n){
+          std::stringstream errorstr;
+          errorstr << "ncv must satisfy nev <= ncv <= n, n is the size of matrix, (nev,ncv,n)" << nev << ", " << ncv << ", " << m_n;
+          /* throw std::invalid_argument("ncv must satisfy nev <= ncv <= n, n is the size of matrix"); */
+          throw std::invalid_argument(errorstr.str());
+        }
     }
 
     // If op is an rvalue

@@ -185,7 +185,7 @@ public:
 
             // if we spent too many iterations, we give up
             iter++;
-            if (iter > 30 * m_n)
+            if (iter > 100 * m_n)
             {
                 info = 1;
                 break;
@@ -198,7 +198,7 @@ public:
             tridiagonal_qr_step(diag, subdiag, start, end, m_evecs.data(), m_n);
         }
 
-        if (info > 0)
+        if (info > 0) 
             throw std::runtime_error("TridiagEigen: eigen decomposition failed");
 
         // Scale eigenvalues back

@@ -52,17 +52,21 @@
 #define OCTREE_VIEW_INDEX_TYPE uint32_t
 #endif
 
+#define TOCTREE_COMPRESS_STAT_SUCCESS 1 // Successfull
+#define TOCTREE_COMPRESS_STAT_FAIL_TOL 2 // Failed to reach tolerance in given max iterations
+#define TOCTREE_COMPRESS_STAT_MEMORY 3 // Not enough memory
+#define TOCTREE_COMPRESS_STAT_ZERO_ARRAY 4 // Input array full of zeros
+
 extern "C" {
 
-// 
 typedef struct {
-  uint32_t root_dims[MAX_ROOT_DIMS]; //
-  uint8_t n_root_dims; //
+  uint32_t root_dims[MAX_ROOT_DIMS];
+  uint8_t n_root_dims;
 
-  uint8_t* packed_bytes;  //
-  uint64_t n_packed_bytes; //
+  uint8_t* packed_bytes; 
+  uint64_t n_packed_bytes;
 
-  uint64_t n_serialized; //
+  uint64_t n_serialized;
 
   ATOMIC_OCTREE_COORDINATE_DTYPE* leaf_coordinates;
   uint32_t n_leaf_coordinates;
@@ -73,17 +77,13 @@ typedef struct {
   VDF_REAL_DTYPE core_scale;
 } compressed_toctree_t;
 
-
 void print_compressed_toctree_t(compressed_toctree_t pod);
 
 void compressed_toctree_t_to_bytes(compressed_toctree_t pod, uint8_t **bytes, uint64_t* n_bytes);
 
 compressed_toctree_t bytes_to_compressed_toctree_t(uint8_t* data, uint64_t n_packed);
 
-void compress_with_toctree_method_new(VDF_REAL_DTYPE* buffer, const size_t Nx, const size_t Ny, const size_t Nz, 
-                                     VDF_REAL_DTYPE tolerance, uint8_t* compressed);
-
-void compress_with_toctree_method(VDF_REAL_DTYPE* buffer, 
+int compress_with_toctree_method(VDF_REAL_DTYPE* buffer, 
                                  const size_t Nx, const size_t Ny, const size_t Nz, 
                                  VDF_REAL_DTYPE tolerance, uint8_t** serialized_buffer, 
                                  uint64_t* serialized_buffer_size, uint64_t maxiter);
