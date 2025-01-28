@@ -114,7 +114,7 @@ private:
 #ifdef VERBOSE_DEBUG
     for (size_t mode = 0; mode < N; mode++) {
       for (int k = 0; k < N; k++) {
-        std::cout << Jk[mode][k] << " ";
+        std::cout << this->Jk[mode][k] << " ";
       }
       std::cout << std::endl;
     }
@@ -178,7 +178,7 @@ public:
     indexrange<T, N> D(this->a, this->b);
     T two(2);
     T one(1);
-    for(uint8_t dim=0; dim < 3; dim++) {
+    for(uint8_t dim=0; dim < N; dim++) {
 
       if (this->size(dim) > this->mindim) { 
         if (subcube & (1 << dim)) { 
@@ -919,6 +919,7 @@ OctreeCoordinates<N> leaf_to_coordinates(const leaf<indexrange<T,N>,N>& L)
   return oc;
 }
 
+
 template<typename T, typename L, size_t core_rank, size_t N>
 struct Tucker {
 private:
@@ -952,6 +953,7 @@ public:
   Tucker(std::unique_ptr<TensorView<T,L,N>> view_ptr) : view_ptr(std::move(view_ptr)) {
     this->init(); 
   }
+
 
   Tucker(TensorView<T,L,N>& view) : view_ptr(&view) {
     this->init();
@@ -1124,7 +1126,7 @@ private:
 #endif
 
           for (size_t j = 0; j < nconv; ++j) for (size_t i = 0; i < view.size(mode); ++i)
-            this->factors[mode](i,j) = eigenvalues(j) > 1e-10 ? eigenvectors(i,j) : T(0);
+            this->factors[mode](i,j) = eigenvalues(j) > 1e-10 ? eigenvectors(i,j) : T(0); // TODO: very small eigenvalues are discarded. What is the correct threshold for discarding?
         }
 
         for (size_t j = nconv; j < core_rank; ++j) for (size_t i = 0; i < view.size(mode); ++i)
@@ -1658,35 +1660,45 @@ int compress_with_toctree_method(VDF_REAL_DTYPE* buffer,
   size_t iter = 0;
   /* cout << "######## mindim = " << K.get_mindim() << " res0 = " << res0 << endl; */
 
+  int64 skip = 3; // TODO: make a parameter like maxiter
+
   while((iter < maxiter) && (relres > tolerance)) {
-    ++iter;
+    if (skip-- > 0) {
+      for (auto it = tree.begin(); it != tree.end(); ++it) {
+        auto& leaf = *it;
+        divide_leaf(leaf);
+      };
+    }
+    else {
+      ++iter;
 
-    VDF_REAL_DTYPE residual = -1.0;
+      VDF_REAL_DTYPE residual = -1.0;
 
-    // find worst leaf
-    leaf<indexrange<UI,3>,3>* worst_leaf;
+      // find worst leaf
+      leaf<indexrange<UI,3>,3>* worst_leaf;
 
-    for (auto it = tree.begin(); it != tree.end(); ++it) {
-      auto& leaf = *it;
-      auto c_view = TensorView<VDF_REAL_DTYPE, UI, 3>(datatensor, leaf.data);
-      VDF_REAL_DTYPE c_residual = c_view.get_residual();
-      if (c_residual > residual) {
-        residual = c_residual;
-        worst_leaf = &leaf;
-      }
-    };
+      for (auto it = tree.begin(); it != tree.end(); ++it) {
+        auto& leaf = *it;
+        auto c_view = TensorView<VDF_REAL_DTYPE, UI, 3>(datatensor, leaf.data);
+        VDF_REAL_DTYPE c_residual = c_view.get_residual();
+        if (c_residual > residual) {
+          residual = c_residual;
+          worst_leaf = &leaf;
+        }
+      };
 
-    // improve worst leaf
-    relres = residual/res0;
-    divide_leaf(*worst_leaf);
+      // improve worst leaf
+      relres = residual/res0;
+      divide_leaf(*worst_leaf);
 
-    OctreeCoordinates<3> worst_coords = leaf_to_coordinates(*worst_leaf);
+      OctreeCoordinates<3> worst_coords = leaf_to_coordinates(*worst_leaf);
 
-    std::unique_ptr<TensorView<VDF_REAL_DTYPE,UI,3>> c_view(new TensorView<VDF_REAL_DTYPE,UI,3>(datatensor, worst_leaf->data));
-    std::unique_ptr<Tucker<VDF_REAL_DTYPE, UI, core_rank, 3>> tuck(new Tucker<VDF_REAL_DTYPE,UI,core_rank,3>(std::move(c_view)));
-    tuck->fill_residual();
-    tuck->setCoordinates(worst_coords);
-    tuckers.push_back(std::move(tuck));
+      std::unique_ptr<TensorView<VDF_REAL_DTYPE,UI,3>> c_view(new TensorView<VDF_REAL_DTYPE,UI,3>(datatensor, worst_leaf->data));
+      std::unique_ptr<Tucker<VDF_REAL_DTYPE, UI, core_rank, 3>> tuck(new Tucker<VDF_REAL_DTYPE,UI,core_rank,3>(std::move(c_view)));
+      tuck->fill_residual();
+      tuck->setCoordinates(worst_coords);
+      tuckers.push_back(std::move(tuck));
+    }
   }
 
   auto serializer = SerialTucker<VDF_REAL_DTYPE, UI, OCTREE_TUCKER_CORE_RANK, 3, ATOMIC_OCTREE_COORDINATE_DTYPE>(tuckers, K);
@@ -1763,35 +1775,46 @@ void compress_with_toctree_method_2d(VDF_REAL_DTYPE* buffer,
 
   size_t iter = 0;
 
+  int64 skip = 3;
+
   while((iter < maxiter) && (relres > tolerance)) {
-    ++iter;
-    /* cout << "iter: " << iter << " sqnorm of view " << view.sqnorm() << "\t\t|\t"; */
 
-    VDF_REAL_DTYPE residual = -1.0;
+    if (skip-- > 0) {
+      for (auto it = tree.begin(); it != tree.end(); ++it) {
+        auto& leaf = *it;
+        divide_leaf(leaf);
+      };
+    }
+    else {
+      ++iter;
+      /* cout << "iter: " << iter << " sqnorm of view " << view.sqnorm() << "\t\t|\t"; */
 
-    // find worst leaf
-    leaf<indexrange<UI,2>,2>* worst_leaf;
+      VDF_REAL_DTYPE residual = -1.0;
 
-    for (auto it = tree.begin(); it != tree.end(); ++it) {
-      auto& leaf = *it;
-      auto c_view = TensorView<VDF_REAL_DTYPE, UI, 2>(datatensor, leaf.data);
-      VDF_REAL_DTYPE c_residual = c_view.get_residual();
-      if (c_residual > residual) {
-        residual = c_residual;
-        worst_leaf = &leaf;
-      }
-    };
+      // find worst leaf
+      leaf<indexrange<UI,2>,2>* worst_leaf;
 
-    // improve worst leaf
-    relres = residual/res0;
-    divide_leaf(*worst_leaf);
-    OctreeCoordinates<2> worst_coords = leaf_to_coordinates(*worst_leaf);
+      for (auto it = tree.begin(); it != tree.end(); ++it) {
+        auto& leaf = *it;
+        auto c_view = TensorView<VDF_REAL_DTYPE, UI, 2>(datatensor, leaf.data);
+        VDF_REAL_DTYPE c_residual = c_view.get_residual();
+        if (c_residual > residual) {
+          residual = c_residual;
+          worst_leaf = &leaf;
+        }
+      };
 
-    std::unique_ptr<TensorView<VDF_REAL_DTYPE,UI,2>> c_view(new TensorView<VDF_REAL_DTYPE,UI,2>(datatensor, worst_leaf->data));
-    std::unique_ptr<Tucker<VDF_REAL_DTYPE, UI, core_rank, 2>> tuck(new Tucker<VDF_REAL_DTYPE,UI,core_rank,2>(std::move(c_view))); /* TODO: save tucker to leaf! */
-    tuck->fill_residual();
-    tuck->setCoordinates(worst_coords);
-    tuckers.push_back(std::move(tuck));
+      // improve worst leaf
+      relres = residual/res0;
+      divide_leaf(*worst_leaf);
+      OctreeCoordinates<2> worst_coords = leaf_to_coordinates(*worst_leaf);
+
+      std::unique_ptr<TensorView<VDF_REAL_DTYPE,UI,2>> c_view(new TensorView<VDF_REAL_DTYPE,UI,2>(datatensor, worst_leaf->data));
+      std::unique_ptr<Tucker<VDF_REAL_DTYPE, UI, core_rank, 2>> tuck(new Tucker<VDF_REAL_DTYPE,UI,core_rank,2>(std::move(c_view))); /* TODO: save tucker to leaf! */
+      tuck->fill_residual();
+      tuck->setCoordinates(worst_coords);
+      tuckers.push_back(std::move(tuck));
+    }
   }
 
   auto serializer = SerialTucker<VDF_REAL_DTYPE, UI, OCTREE_TUCKER_CORE_RANK, 2, ATOMIC_OCTREE_COORDINATE_DTYPE>(tuckers, K);
