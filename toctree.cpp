@@ -1104,6 +1104,7 @@ private:
 
         try {
           nconv = eigs.compute(SortRule::LargestMagn);
+          nconv = eigs.compute(SortRule::LargestMagn);
           info = 1;
         } catch (std::runtime_error E) {
           ++reducer;
@@ -1666,7 +1667,11 @@ int compress_with_toctree_method(VDF_REAL_DTYPE* buffer,
     if (skip-- > 0) {
       for (auto it = tree.begin(); it != tree.end(); ++it) {
         auto& leaf = *it;
-        divide_leaf(leaf);
+
+        auto c_view = TensorView<VDF_REAL_DTYPE, UI, 3>(datatensor, leaf.data);
+        VDF_REAL_DTYPE c_residual = c_view.get_residual();
+        if (c_residual > 0) divide_leaf(leaf);
+
       };
     }
     else {
@@ -1775,7 +1780,7 @@ void compress_with_toctree_method_2d(VDF_REAL_DTYPE* buffer,
 
   size_t iter = 0;
 
-  int64 skip = 3;
+  int64 skip = 2;
 
   while((iter < maxiter) && (relres > tolerance)) {
 
