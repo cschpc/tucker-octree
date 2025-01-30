@@ -1699,7 +1699,6 @@ int compress_with_toctree_method(VDF_REAL_DTYPE* buffer,
         VDF_REAL_DTYPE c_minimum = c_view.get_minimum();
 
         if ((c_residual > 0) && (c_minimum == 0)) divide_leaf(leaf);
-
       };
     }
     else {
@@ -1821,7 +1820,7 @@ void compress_with_toctree_method_2d(VDF_REAL_DTYPE* buffer,
         VDF_REAL_DTYPE c_residual = c_view.get_residual();
         VDF_REAL_DTYPE c_minimum = c_view.get_minimum();
 
-        if ((c_residual > 0) && (c_minimum == 0)) divide_leaf(leaf);
+        if ((c_residual > 0) && (c_minimum <= 0)) divide_leaf(leaf);
       };
     }
     else {

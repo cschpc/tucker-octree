@@ -116,6 +116,7 @@ if false
   display(origdata[ranges...])
 end
 
+# fig = Figure(); 
 if true
 using TestImages
 using GLMakie
@@ -128,12 +129,15 @@ import .TOctreeCompress as to
 # img = testimage("cameraman") .|> Float32
 # img = testimage("brick_wall_he_512.tiff") .|> Float32
 # img = testimage("livingroom.tif") .|> Float32
-img = TiffImages.load("./blobby.tiff") .|> Float32
+# img = TiffImages.load("./blobby-nsq.tiff") .|> Float32
+
+img = TiffImages.load("blobby-nsq-2level-big.tiff") .|> Float32
 
 
 
 fig = Figure(); 
 image(fig[1,1], rotr90(img), axis = (aspect=DataAspect(),))
+# image!(fig[1,1], rotr90(img))#, axis = (aspect=DataAspect(),))
 
 
 # img = dct(img, [1,2])
@@ -163,9 +167,13 @@ normalize(X) = (X .- minimum(X)) ./ (maximum(X) - minimum(X))
 img2 = F.(copy(img)) .|> Float32; 
 
 iters=1
-maxiters=[64]
+# maxiters=[maxiters[1] + 1]
+maxiters = [2048]
+println("maxiters = $(maxiters[1])")
 
-bytes = [to.compress!(img2, 1e-2; maxiter=maxiters[n], skip_levels=0) for n = 1:iters]
+skip_levels = UInt64(floor(log2(maximum(size(img))/64)))
+# skip_levels=6
+bytes = [to.compress!(img2, 5e-1; maxiter=maxiters[n], skip_levels=skip_levels) for n = 1:iters]
 
 println("Ratio: $(prod(size(img))/sum(size.(bytes,1)))")
 
@@ -186,6 +194,7 @@ print(sum(isnan.(acc) .| isinf.(acc)))
 acc[isnan.(acc) .| isinf.(acc)] .= Float32(0)
 
 image(fig[1,2], invF.(acc)|>rotr90, axis=(aspect=DataAspect(),) );
+# image!(fig[1,2], invF.(acc)|>rotr90)#, axis=(aspect=DataAspect(),) );
 Libdl.dlclose(to.libbi)
 
 fig
