@@ -445,7 +445,7 @@ public:
       acc = MIN(acc, (*this)(i1,i2));
       }
     }
-    return false;
+    return acc;
   }
 
 
