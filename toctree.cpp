@@ -312,6 +312,8 @@ private:
 
 public:
 
+  // TODO: make iterators and replace get_residual, supnorm, minimum etc with folds
+
   TensorView(Eigen::TensorMap<Eigen::Tensor<T,N,Eigen::ColMajor>> &datatensor) : datatensor(datatensor) {};
   TensorView(Eigen::TensorMap<Eigen::Tensor<T,N,Eigen::ColMajor>> &datatensor, indexrange<L, N> I) : datatensor(datatensor),  I(I) {};
 
@@ -328,6 +330,7 @@ public:
         }
     }
 
+  
   template<size_t N_ = N, std::enable_if_t<N_==3,int> = 0, typename ...Ts> // ok
     void fill(T x) {
       for (size_t i3 = 0; i3 < this->size(2); i3++) 
@@ -421,6 +424,28 @@ public:
       }
     }
     return acc;
+  }
+
+  T get_minimum() {
+    T acc;
+    if constexpr (N==3) {
+      acc = (*this)(0,0,0);
+      for (size_t i3 = 0; i3 < this->size(2); i3++) 
+      for (size_t i2 = 0; i2 < this->size(1); i2++)
+      for (size_t i1 = 0; i1 < this->size(0); i1++) 
+      {
+      acc = MIN(acc, (*this)(i1,i2,i3));
+      }
+    }
+    else if constexpr (N==2) {
+      acc = (*this)(0,0);
+      for (size_t i2 = 0; i2 < this->size(1); i2++)
+      for (size_t i1 = 0; i1 < this->size(0); i1++) 
+      {
+      acc = MIN(acc, (*this)(i1,i2));
+      }
+    }
+    return false;
   }
 
 
@@ -1103,8 +1128,7 @@ private:
         eigs.init();
 
         try {
-          nconv = eigs.compute(SortRule::LargestMagn);
-          nconv = eigs.compute(SortRule::LargestMagn);
+          nconv = eigs.compute(SortRule::LargestMagn, 5000, 1e-14);
           info = 1;
         } catch (std::runtime_error E) {
           ++reducer;
@@ -1632,7 +1656,9 @@ int compress_with_toctree_method(VDF_REAL_DTYPE* buffer,
                                   VDF_REAL_DTYPE tolerance,
                                   uint8_t** serialized_buffer, 
                                   uint64_t* serialized_buffer_size,
-                                  uint64_t maxiter) {
+                                  uint64_t maxiter,
+                                  uint64_t skip_levels) 
+{
   using namespace Eigen;
   using namespace tree_compressor;
   using namespace std;
@@ -1661,7 +1687,7 @@ int compress_with_toctree_method(VDF_REAL_DTYPE* buffer,
   size_t iter = 0;
   /* cout << "######## mindim = " << K.get_mindim() << " res0 = " << res0 << endl; */
 
-  int64 skip = 3; // TODO: make a parameter like maxiter
+  int64 skip = skip_levels;
 
   while((iter < maxiter) && (relres > tolerance)) {
     if (skip-- > 0) {
@@ -1670,7 +1696,9 @@ int compress_with_toctree_method(VDF_REAL_DTYPE* buffer,
 
         auto c_view = TensorView<VDF_REAL_DTYPE, UI, 3>(datatensor, leaf.data);
         VDF_REAL_DTYPE c_residual = c_view.get_residual();
-        if (c_residual > 0) divide_leaf(leaf);
+        VDF_REAL_DTYPE c_minimum = c_view.get_minimum();
+
+        if ((c_residual > 0) && (c_minimum == 0)) divide_leaf(leaf);
 
       };
     }
@@ -1751,7 +1779,9 @@ void compress_with_toctree_method_2d(VDF_REAL_DTYPE* buffer,
                                   VDF_REAL_DTYPE tolerance,
                                   uint8_t** serialized_buffer, 
                                   uint64_t* serialized_buffer_size,
-                                  uint64_t maxiter) {
+                                  uint64_t maxiter, 
+                                  uint64_t skip_levels) 
+{
   using namespace Eigen;
   using namespace tree_compressor;
   using namespace std;
@@ -1780,14 +1810,18 @@ void compress_with_toctree_method_2d(VDF_REAL_DTYPE* buffer,
 
   size_t iter = 0;
 
-  int64 skip = 2;
+  int64 skip = skip_levels;
 
   while((iter < maxiter) && (relres > tolerance)) {
 
     if (skip-- > 0) {
       for (auto it = tree.begin(); it != tree.end(); ++it) {
         auto& leaf = *it;
-        divide_leaf(leaf);
+        auto c_view = TensorView<VDF_REAL_DTYPE, UI, 2>(datatensor, leaf.data);
+        VDF_REAL_DTYPE c_residual = c_view.get_residual();
+        VDF_REAL_DTYPE c_minimum = c_view.get_minimum();
+
+        if ((c_residual > 0) && (c_minimum == 0)) divide_leaf(leaf);
       };
     }
     else {

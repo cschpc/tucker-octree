@@ -86,7 +86,7 @@ compressed_toctree_t bytes_to_compressed_toctree_t(uint8_t* data, uint64_t n_pac
 int compress_with_toctree_method(VDF_REAL_DTYPE* buffer, 
                                  const size_t Nx, const size_t Ny, const size_t Nz, 
                                  VDF_REAL_DTYPE tolerance, uint8_t** serialized_buffer, 
-                                 uint64_t* serialized_buffer_size, uint64_t maxiter);
+                                 uint64_t* serialized_buffer_size, uint64_t maxiter, uint64_t skip_levels);
 
 void uncompress_with_toctree_method(VDF_REAL_DTYPE* buffer, const size_t Nx, const size_t Ny, const size_t Nz,
                                    uint8_t* serialized_buffer, uint64_t serialized_buffer_size);

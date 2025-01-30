@@ -33,7 +33,7 @@ function compress!(data::Array{Cfloat,3}, tol;maxiter=100)::Vector{UInt8}
   return bytes
 end
 
-function compress!(data::Array{Cfloat,2}, tol;maxiter=100)::Vector{UInt8}
+function compress!(data::Array{Cfloat,2}, tol;maxiter=100, skip_levels=6)::Vector{UInt8}
 
   c_Nx = Csize_t(size(data,1))
   c_Ny = Csize_t(size(data,2))
@@ -44,7 +44,7 @@ function compress!(data::Array{Cfloat,2}, tol;maxiter=100)::Vector{UInt8}
 
   @ccall $compress_2d(
     data::Ptr{Cfloat}, c_Nx::Csize_t, c_Ny::Csize_t,
-    c_tol::Cfloat, c_bytes::Ptr{Ptr{UInt8}}, c_n_bytes::Ptr{UInt64},maxiter::UInt64)::Cvoid
+    c_tol::Cfloat, c_bytes::Ptr{Ptr{UInt8}}, c_n_bytes::Ptr{UInt64},maxiter::UInt64, skip_levels::UInt64)::Cvoid
 
   n_bytes = c_n_bytes[1]
   unsafe_bytes = unsafe_wrap(Array{Cuchar,1}, c_bytes[1], n_bytes; own = true)
@@ -77,7 +77,7 @@ end
 
 # testing
 
-if true
+if false
   Nx = Csize_t(50)
   Ny = Csize_t(50)
   Nz = Csize_t(50)
@@ -116,28 +116,33 @@ if true
   display(origdata[ranges...])
 end
 
-if false
+if true
 using TestImages
 using GLMakie
+using FFTW
+using TiffImages
 
 import .TOctreeCompress as to
 
 # img = testimage("fabio_gray_512") .|> Float32
 # img = testimage("cameraman") .|> Float32
 # img = testimage("brick_wall_he_512.tiff") .|> Float32
-img = testimage("livingroom.tif") .|> Float32
+# img = testimage("livingroom.tif") .|> Float32
+img = TiffImages.load("./blobby.tiff") .|> Float32
 
-mult = let C=5.0, Cx = 1.0*C / size(img,1), Cy = 1.0*C / size(img,2)
-  [sqrt(1+(Cx*x)^2+(Cy*y)^2) for x in axes(img,1), y in axes(img, 2)]
-  end
 
 
 fig = Figure(); 
 image(fig[1,1], rotr90(img), axis = (aspect=DataAspect(),))
 
-# img = dct(img, [1,2])
-img = img #.* mult
 
+# img = dct(img, [1,2])
+
+# mult = let C=0.1, Cx = 1.0*C / size(img,1), Cy = 1.0*C / size(img,2)
+  # [sqrt(1/(img[1,1]^2)+(Cx*(x-1))^2+(Cy*(y-1))^2) for x in axes(img,1), y in axes(img, 2)]
+  # end
+
+# img = img .* mult
 
 logtrx(x;eps=1.8, beta=2) = log(beta*x+eps)
 invlogtrx(y; eps=1.8, beta=2) = (exp(y) - eps)/beta # y= log(x*beta+eps) x*beta+eps = log(y) x = (log(y)-eps)/beta
@@ -148,17 +153,19 @@ invparfrac(y;eps=0.1) = 1/y - eps # y = 1/(x+eps) 1/y = x+eps x = 1/y - eps
 aff(x;eps=2) = x+eps
 invaff(x;eps=2) = x-eps
 
-F = x->x
-invF = F
+id(x) = x
+
+F = id; #x->x
+invF = id; #F
 
 normalize(X) = (X .- minimum(X)) ./ (maximum(X) - minimum(X))
 
 img2 = F.(copy(img)) .|> Float32; 
 
 iters=1
-maxiters=[128]
+maxiters=[64]
 
-bytes = [to.compress!(img2, 1e-3; maxiter=maxiters[n]) for n = 1:iters]
+bytes = [to.compress!(img2, 1e-2; maxiter=maxiters[n], skip_levels=0) for n = 1:iters]
 
 println("Ratio: $(prod(size(img))/sum(size.(bytes,1)))")
 
@@ -172,7 +179,7 @@ for n = iters:-1:1
   acc[:] = acc[:] .+ img2[:]
 end
 
-acc = acc #./ mult
+# acc = acc ./ mult
 # acc = idct(acc, [1,2])
 
 print(sum(isnan.(acc) .| isinf.(acc)))
