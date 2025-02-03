@@ -12,6 +12,7 @@ option(VERBOSE_DEBUG "Output verbose debugging messages" OFF)
 option(BRIEF_DEBUG "Output brief debugging messages" OFF)
 option(OCTREE_RANGE_CHECK "Check out of bounds accesses" OFF)
 option(BUILD_TEST_BIN "Build test binary" OFF)
+option(TOCTREE_L2ERROR "Use l_2 norm in error calculation. Otherwise use max-norm." OFF)
 
 add_library(toctree_compressor toctree.cpp)
 target_link_libraries (toctree_compressor Eigen3::Eigen zfp::zfp)

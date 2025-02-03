@@ -54,6 +54,12 @@ extern "C" {
 #define MIN(a,b) ((a)<(b)?(a):(b))
 #define MAX(a,b) ((a)>(b)?(a):(b))
 
+#ifdef TOCTREE_L2ERROR
+#define ACCUMULATE(A,B) (A) += (B);
+#else
+#define ACCUMULATE(A,B) A = MAX(A,B);
+#endif
+
 #define assertm(expression, message) assert(((void)message, expression))
 
 #define starttime  { auto start = chrono::high_resolution_clock::now(); 
@@ -308,7 +314,7 @@ private:
     return this->I.get_J(mode, p, rest...);
   }
 
-  T residual = -1;
+  /* T residual = -1; */
 
 public:
 
@@ -344,38 +350,30 @@ public:
   template<size_t N_ = N, std::enable_if_t<N_==2,int> = 0, typename ...Ts>
     T get_residual() {
 
-      if (this->residual > 0) return this->residual;
+      /* if (this->residual > 0) return this->residual; */
 
-      auto MAX = [](T a,T b) { 
-        /* return a*a + b; */
-        return a > b ? a : b; 
-      };
       T acc = T(0);
       for (size_t i2 = 0; i2 < this->size(1); i2++) 
       for (size_t i1 = 0; i1 < this->size(0); i1++) 
         {
-        acc = MAX(abs((*this)(i1,i2)), acc);
+        ACCUMULATE(acc, (*this)(i1,i2)*(*this)(i1,i2));
         }
-    return acc;
+    return sqrt(acc);
     }
 
   template<size_t N_ = N, std::enable_if_t<N_==3,int> = 0, typename ...Ts> // ok
     T get_residual() {
 
-      if (this->residual > 0) return this->residual;
+      /* if (this->residual > 0) return this->residual; */
 
-      auto MAX = [](T a,T b) { 
-        /* return a*a + b; */
-        return a > b ? a : b; 
-      };
       T acc = T(0);
       for (size_t i3 = 0; i3 < this->size(2); i3++) 
       for (size_t i2 = 0; i2 < this->size(1); i2++) 
       for (size_t i1 = 0; i1 < this->size(0); i1++) 
         {
-        acc = MAX(abs((*this)(i1,i2,i3)), acc);
+        ACCUMULATE(acc, (*this)(i1,i2,i3)*(*this)(i1,i2,i3));
         }
-    return acc;
+    return sqrt(acc);
     }
 
   template<typename ...M>
@@ -1109,7 +1107,7 @@ private:
     }
 
     /* TODO: too smart scaling, die gracefully if res < epsilon */
-    auto res = MAX(VDF_REAL_DTYPE(1e-16), view.get_residual());
+    auto res = MAX(VDF_REAL_DTYPE(1e-16), view.supnorm());
     this->scale = 1/res;
 
     NormalFoldProd<T, L, N> op(view, this->scale);
@@ -1704,23 +1702,25 @@ int compress_with_toctree_method(VDF_REAL_DTYPE* buffer,
     else {
       ++iter;
 
-      VDF_REAL_DTYPE residual = -1.0;
+      VDF_REAL_DTYPE residual = 0.0;
 
       // find worst leaf
       leaf<indexrange<UI,3>,3>* worst_leaf;
 
+      VDF_REAL_DTYPE leaf_residual = 0.0;
       for (auto it = tree.begin(); it != tree.end(); ++it) {
         auto& leaf = *it;
         auto c_view = TensorView<VDF_REAL_DTYPE, UI, 3>(datatensor, leaf.data);
         VDF_REAL_DTYPE c_residual = c_view.get_residual();
-        if (c_residual > residual) {
-          residual = c_residual;
+        if (c_residual > leaf_residual) {
+          leaf_residual = c_residual;
           worst_leaf = &leaf;
         }
+        ACCUMULATE(residual, c_residual*c_residual);
       };
 
       // improve worst leaf
-      relres = residual/res0;
+      relres = sqrt(residual)/res0;
       divide_leaf(*worst_leaf);
 
       OctreeCoordinates<3> worst_coords = leaf_to_coordinates(*worst_leaf);
@@ -1827,23 +1827,31 @@ void compress_with_toctree_method_2d(VDF_REAL_DTYPE* buffer,
       ++iter;
       /* cout << "iter: " << iter << " sqnorm of view " << view.sqnorm() << "\t\t|\t"; */
 
-      VDF_REAL_DTYPE residual = -1.0;
+      VDF_REAL_DTYPE residual = 0.0;
 
       // find worst leaf
       leaf<indexrange<UI,2>,2>* worst_leaf;
 
+      /* VDF_REAL_DTYPE sumres = VDF_REAL_DTYPE(0); */
+
+/* #define accumulate(A,B) (A) += (B); */
+/* #define accumulate(A,B) (A) = MAX((A),(B)); */
+      
+      VDF_REAL_DTYPE leaf_residual = 0.0;
       for (auto it = tree.begin(); it != tree.end(); ++it) {
         auto& leaf = *it;
         auto c_view = TensorView<VDF_REAL_DTYPE, UI, 2>(datatensor, leaf.data);
         VDF_REAL_DTYPE c_residual = c_view.get_residual();
-        if (c_residual > residual) {
-          residual = c_residual;
+        if (c_residual > leaf_residual) {
+          leaf_residual = c_residual;
           worst_leaf = &leaf;
         }
+        ACCUMULATE(residual,c_residual*c_residual);
       };
+/* #undef accumulate */
 
       // improve worst leaf
-      relres = residual/res0;
+      relres = sqrt(residual)/res0;
       divide_leaf(*worst_leaf);
       OctreeCoordinates<2> worst_coords = leaf_to_coordinates(*worst_leaf);
 
