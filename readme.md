@@ -25,12 +25,12 @@ T-Octree is licensed under GPL2.0 or later (see `LICENSE` text).
 
 T-Octree utilizes the following codes:
 
-- [zfp](https://computing.llnl.gov/projects/zfp)
-- [Eigen3](https://eigen.tuxfamily.org/index.php?title=Main_Page)
-- [Spectra C++ Library For Large Scale Eigenvalue Problems](https://spectralib.org) (included in `contrib/include` w/ it's own license)
-- [argparse](https://github.com/morrisfranken/argparse) (included in `contrib/include` w/ it's own license)
+- [zfp](https://computing.llnl.gov/projects/zfp) (>=v1.0.1, may work with earlier)
+- [Eigen3](https://eigen.tuxfamily.org/index.php?title=Main_Page) (>=v3.4.0, may work with earlier)
+- [Spectra C++ Library For Large Scale Eigenvalue Problems](https://spectralib.org) (included in `contrib/include`)
+- [argparse](https://github.com/morrisfranken/argparse) (included in `contrib/include`)
 
-## Acknoledgements
+## Acknowledgements
 
 This software library was built within project *Adaptive Strategies Towards Expedient Recovery In eXascale* (ASTERIX) at CSC – IT Center for Science Ltd. and University of Helsinki.
 Innovation Study ASTERIX has received funding through the Inno4scale project, which is funded by the European High-Performance Computing Joint Undertaking (JU) under Grant Agreement No 101118139. The JU receives support from the European Union's Horizon Europe Programme.
