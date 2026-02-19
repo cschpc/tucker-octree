@@ -64,32 +64,32 @@ typedef struct {
   uint8_t n_root_dims;
 
   uint8_t* packed_bytes; 
-  uint64_t n_packed_bytes;
+  std::size_t n_packed_bytes;
 
-  uint64_t n_serialized;
+  std::size_t n_serialized;
 
   ATOMIC_OCTREE_COORDINATE_DTYPE* leaf_coordinates;
   uint32_t n_leaf_coordinates;
 
   uint8_t* leaf_levels;
-  uint64_t core_size;
+  std::size_t core_size;
   uint8_t bytes_per_leaf_coordinate;
   VDF_REAL_DTYPE core_scale;
 } compressed_toctree_t;
 
 void print_compressed_toctree_t(compressed_toctree_t pod);
 
-void compressed_toctree_t_to_bytes(compressed_toctree_t pod, uint8_t **bytes, uint64_t* n_bytes);
+void compressed_toctree_t_to_bytes(compressed_toctree_t pod, uint8_t **bytes, std::size_t* n_bytes);
 
-compressed_toctree_t bytes_to_compressed_toctree_t(uint8_t* data, uint64_t n_packed);
+compressed_toctree_t bytes_to_compressed_toctree_t(uint8_t* data, std::size_t n_packed);
 
 int compress_with_toctree_method(VDF_REAL_DTYPE* buffer, 
                                  const size_t Nx, const size_t Ny, const size_t Nz, 
                                  VDF_REAL_DTYPE tolerance, uint8_t** serialized_buffer, 
-                                 uint64_t* serialized_buffer_size, uint64_t maxiter, uint64_t skip_levels);
+                                 std::size_t* serialized_buffer_size, std::size_t maxiter, std::size_t skip_levels);
 
 void uncompress_with_toctree_method(VDF_REAL_DTYPE* buffer, const size_t Nx, const size_t Ny, const size_t Nz,
-                                   uint8_t* serialized_buffer, uint64_t serialized_buffer_size);
+                                   uint8_t* serialized_buffer, std::size_t serialized_buffer_size);
 
 }
 #endif
