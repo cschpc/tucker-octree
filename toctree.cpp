@@ -1195,14 +1195,14 @@ private:
 
   std::vector<atomic_coord_type> leaf_coordinates;
   std::vector<uint8_t> leaf_levels;
-  uint64_t core_size;
+  std::size_t core_size;
 
   T core_scale = 0;
   size_t n_core;
 
   indexrange<L, N> root_range;
 
-  uint64_t packed_size;
+  std::size_t packed_size;
   std::vector<uint8_t> packed;
 
   void make_serialized_bytes() {
@@ -1398,7 +1398,7 @@ public:
     pod.leaf_coordinates = this->leaf_coordinates.data();
     pod.n_leaf_coordinates = this->leaf_coordinates.size();
     pod.leaf_levels = this->leaf_levels.data();
-    pod.core_size = uint64_t(this->core_size);
+    pod.core_size = std::size_t(this->core_size);
     pod.bytes_per_leaf_coordinate = sizeof(atomic_coord_type);
     pod.core_scale = this->core_scale;
 
@@ -1522,7 +1522,7 @@ void print_compressed_toctree_t(compressed_toctree_t pod)
   
 }
 
-void compressed_toctree_t_to_bytes(compressed_toctree_t pod, uint8_t **bytes, uint64_t* n_bytes) {
+void compressed_toctree_t_to_bytes(compressed_toctree_t pod, uint8_t **bytes, std::size_t* n_bytes) {
 
   ptrdiff_t acc;
 
@@ -1576,7 +1576,7 @@ void compressed_toctree_t_to_bytes(compressed_toctree_t pod, uint8_t **bytes, ui
 #undef copy_atomic
 }
 
-compressed_toctree_t bytes_to_compressed_toctree_t(uint8_t* data, uint64_t n_packed)
+compressed_toctree_t bytes_to_compressed_toctree_t(uint8_t* data, std::size_t n_packed)
 {
 
 #define stof(X) sizeof(typeof(X))
@@ -1600,7 +1600,7 @@ compressed_toctree_t bytes_to_compressed_toctree_t(uint8_t* data, uint64_t n_pac
   }
   printacc;
 
-  pod.n_packed_bytes = *(uint64_t*)(data+acc);
+  pod.n_packed_bytes = *(std::size_t*)(data+acc);
   acc = acc+stof(pod.n_packed_bytes);
   printacc;
 
@@ -1608,8 +1608,8 @@ compressed_toctree_t bytes_to_compressed_toctree_t(uint8_t* data, uint64_t n_pac
   acc = acc+pod.n_packed_bytes*stofp(pod.packed_bytes);
   printacc;
 
-  pod.n_serialized = *(uint64_t*)(data+acc);
-  acc = acc+sizeof(uint64_t);
+  pod.n_serialized = *(std::size_t*)(data+acc);
+  acc = acc+sizeof(std::size_t);
   printacc;
 
   pod.n_leaf_coordinates = *(uint32_t*)(data+acc);
@@ -1624,7 +1624,7 @@ compressed_toctree_t bytes_to_compressed_toctree_t(uint8_t* data, uint64_t n_pac
   acc = acc + pod.n_leaf_coordinates*stofp(pod.leaf_levels);
   printacc;
 
-  pod.core_size = *(uint64_t*)(data+acc);
+  pod.core_size = *(std::size_t*)(data+acc);
   acc = acc+sizeof(typeof(pod.core_size));
   printacc;
 
@@ -1653,9 +1653,9 @@ int compress_with_toctree_method(VDF_REAL_DTYPE* buffer,
                                   const size_t Nx, const size_t Ny, const size_t Nz, 
                                   VDF_REAL_DTYPE tolerance,
                                   uint8_t** serialized_buffer, 
-                                  uint64_t* serialized_buffer_size,
-                                  uint64_t maxiter,
-                                  uint64_t skip_levels) 
+                                  std::size_t* serialized_buffer_size,
+                                  std::size_t maxiter,
+                                  std::size_t skip_levels) 
 {
   using namespace Eigen;
   using namespace tree_compressor;
@@ -1745,7 +1745,7 @@ int compress_with_toctree_method(VDF_REAL_DTYPE* buffer,
 }
 
 void uncompress_with_toctree_method(VDF_REAL_DTYPE* buffer, const size_t Nx, const size_t Ny, const size_t Nz,
-                                    uint8_t* serialized_buffer, uint64_t serialized_buffer_size) {
+                                    uint8_t* serialized_buffer, std::size_t serialized_buffer_size) {
   using namespace Eigen;
   using namespace tree_compressor;
 
@@ -1777,9 +1777,9 @@ void compress_with_toctree_method_2d(VDF_REAL_DTYPE* buffer,
                                   const size_t Nx, const size_t Ny,
                                   VDF_REAL_DTYPE tolerance,
                                   uint8_t** serialized_buffer, 
-                                  uint64_t* serialized_buffer_size,
-                                  uint64_t maxiter, 
-                                  uint64_t skip_levels) 
+                                  std::size_t* serialized_buffer_size,
+                                  std::size_t maxiter, 
+                                  std::size_t skip_levels) 
 {
   using namespace Eigen;
   using namespace tree_compressor;
@@ -1871,7 +1871,7 @@ void compress_with_toctree_method_2d(VDF_REAL_DTYPE* buffer,
 }
 
 void uncompress_with_toctree_method_2d(VDF_REAL_DTYPE* buffer, const size_t Nx, const size_t Ny, 
-                                    uint8_t* serialized_buffer, uint64_t serialized_buffer_size) {
+                                    uint8_t* serialized_buffer, std::size_t serialized_buffer_size) {
   using namespace Eigen;
   using namespace tree_compressor;
 
